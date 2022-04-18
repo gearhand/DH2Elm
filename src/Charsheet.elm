@@ -1,8 +1,17 @@
 module Charsheet exposing (..)
+import Array exposing (Array)
+import Array.NonEmpty
 import Browser
-import Html exposing (Attribute, Html, a, br, button, div, h3, hr, img, input, label, p, section, span, table, text)
+import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
+import Html.Events.Extra exposing (onChange)
+import List exposing (foldl)
+import Skills exposing (Skill, skillArray)
+import Stats exposing (Aptitude(..), Stat, StatName(..), aptToString)
+import FieldLens exposing (FieldLens, modify)
+import String exposing (fromInt)
+import Json.Decode as Json
 
 main = Browser.element
   { init = init
@@ -11,20 +20,161 @@ main = Browser.element
   , subscriptions = subscriptions
   }
 
-type alias Msg = String
-type alias Model = ()
+--type alias Msg = String
+type Msg = Increase ModelLens
+         | Decrease ModelLens
+         | AddS Skill
+         | Upgrade -- Skill
+         | Degrade -- Skill
+         | Add -- Talent
+         | Remove -- Talent
+         | Placeholder String
 
-init: () -> ((), Cmd Msg)
-init _ = ((), Cmd.none)
+type alias Model =
+  { weaponSkill: Int
+  , freeExp: Int
+  , spentExp: Int
+  , aptitudes: List Aptitude
+  , skills: Array Skill
+  }
+
+type alias SkillView = (Skill, String, Int)
+viewSkill (skill, spec, lvl) =
+  case spec of
+    "" -> skill.name ++ " +" ++ String.fromInt lvl
+    _  -> skill.name ++ " (" ++ spec ++ ")" ++ " +" ++ String.fromInt lvl
+
+type alias ModelLens = FieldLens Model Int Int Model
+weaponSkill : ModelLens
+weaponSkill = FieldLens .weaponSkill (\v r -> { r | weaponSkill = v })
+
+init: () -> (Model, Cmd Msg)
+init _ =
+  ( { weaponSkill = 20
+    , freeExp = 1000
+    , spentExp = 0
+    , aptitudes = [ StatApt Ag
+                  , StatApt BS
+                  , Fieldcraft
+                  , Finesse
+                  , General
+                  , Knowledge
+                  , StatApt Per
+                  , StatApt Tou
+                  ]
+    , skills = Array.fromList [ Skills.logic , Skills.acrobatics ]
+    }
+  , Cmd.none)
+
+aptMap: StatName -> List Aptitude
+aptMap stat =
+  StatApt stat :: case stat of
+    WS -> [Offence]
+    BS -> [Finesse]
+    Str -> [Offence]
+    Tou -> [Defence]
+    Ag -> [Finesse]
+    Int -> [Knowledge]
+    Per -> [Fieldcraft]
+    Will -> [Psyker]
+    Fell -> [Social]
+    Infl -> []
+
+
+contains: List a -> a -> Bool
+contains lst el =
+  case lst of
+    x::xs -> if el == x then True else contains xs el
+    [] -> False
+
+aptsCounter: List Aptitude -> List Aptitude -> Int
+aptsCounter charApts =
+  List.foldl (\el acc -> if contains charApts el then acc + 1 else acc) 0
+
+statProgression =
+  Array.fromList [ [500, 750, 1000, 1500, 2500]
+                 , [250, 500, 750, 1000, 1500]
+                 , [100, 250, 500, 750, 1250]
+                 ]
+
+
+update: Msg -> Model -> (Model, Cmd Msg)
+update msg model =
+  case msg of
+    Increase f -> (modify f (\v -> v + 5) model, Cmd.none)
+    Decrease f -> (modify f (\v -> v - 5) model, Cmd.none)
+    AddS skill -> ({ model | skills = Array.push skill model.skills }, Cmd.none)
+    _ -> (model, Cmd.none)
+
+statBox: Stat -> Html Msg
+statBox ((sname, sval) as stat) =
+  div [ class "w3-row-padding"]
+  [ div [ class "w3-half"]
+    [ div
+      [ name "roll_WS", type_ "roll", style "text-align" "center;"
+      , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
+      ]
+      [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"]
+        [text <| Stats.fullName sname]
+      ]
+    ]
+  , div [ class "w3-third"]
+    [ div [ class "sheet-unnatural_box" ]
+      [ input [ disabled True, id "attr_WS", type_ "text", value <| String.fromInt sval] [ ]
+      ]
+    ]
+  , div [ class "w3-rest" ]
+    [ button [ style "height" "33px", style "width" "100%", onClick <| Increase weaponSkill ] [ text "+" ]
+    , button [ style "height" "33px", style "width" "100%", onClick <| Decrease weaponSkill ] [ text "-" ]
+    ]
+  ]
+
+aptitudesView aptList =
+  let apt value = div [ class "w3-half"]
+                [ span [ class "sheet-item w3-center underline", id "aptitude1"] [ text <| aptToString value ] ]
+      row pair = div [ class "w3-row"] pair
+      combine : List Aptitude -> List (Html Msg)
+      combine aptLst =
+        case aptLst of
+          (f::s::tail) -> row [apt f, apt s] :: combine tail
+          [x] -> row [ apt x ] :: []
+          [] -> []
+  in combine aptList
+
+skillView: Skill -> Html Msg
+skillView skill =
+  div [ class "w3-row"{-, id "defaultSkill", style "display" "none"-}]
+  [ div [ class "sheet-item w3-center underline", style "width" "100%"]
+    [ span [ class "skillDetail"] [ text skill.name ]
+    ]
+  ]
+
+handler =
+  on "change" (Json.map (\idx -> AddS (Skills.get idx)) <| Json.at ["target", "valueAsNumber"] Json.int)
+
+handler1 =
+  onChange (\_ -> (AddS Skills.parry))
+
+handler2 =
+  onChange (\s -> Debug.log s (AddS Skills.parry))
+
+handler3 =
+  on "change" (Json.map (\idx -> AddS (Skills.get (idx - 1))) <| Json.at ["target", "selectedIndex"] Json.int)
+
+skillSelect: Html Msg
+skillSelect =
+  let opt (idx, skill) = option [style "text-align" "center", value (String.fromInt idx)] [ text <| .name skill ]
+      add = onClick << AddS
+  in select [ handler3 ] <|
+      [ option [style "text-align" "center"] [ text "Learn new skill" ]
+      ] ++ List.map (opt) (Array.NonEmpty.toIndexedList skillArray)
 
 subscriptions: Model -> Sub Msg
 subscriptions _ = Sub.none
 
-update: Msg -> Model -> (Model, Cmd Msg)
-update msg model = (model, Cmd.none)
 
-view: () -> Html Msg
-view _ =
+view: Model -> Html Msg
+view model =
     section [ id "charSheet"
             --, style "display" "none" -- Off switch
             , style "opacity" "1"
@@ -74,7 +224,7 @@ view _ =
           , div [ class "w3-quarter w3-center"] [
               div [ style "padding-top" "25px;" ] [
                 button [ class "w3-button w3-round w3-yellow"
-                       , onClick "document.getElementById('saveModal').style.display 'block'"
+                       , onClick <| Placeholder "document.getElementById('saveModal').style.display 'block'"
                        ] [text "Export/Save"]
               ]
             ]
@@ -95,16 +245,17 @@ view _ =
                     [ -- Left Column (Characteristics) --
                       div [ class "w3-half"]
                       [ -- WeaponSkill (WS) --
-                        div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"]
-                          [ div [ name "roll_WS", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
-                                ] [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"] [text "Weapon Skill (WS)"] ]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [ input [ disabled True, id "attr_WS", type_ "text", value "0"] [ ] ]
-                          ]
-                        ]
+                        -- div [ class "w3-row-padding"]
+                        -- [ div [ class "w3-half"]
+                        --   [ div [ name "roll_WS", type_ "roll", style "text-align" "center;"
+                        --         , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
+                        --         ] [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"] [text "Weapon Skill (WS)"] ]
+                        --   ]
+                        -- , div [ class "w3-half"] [
+                        --     div [ class "sheet-unnatural_box"] [ input [ disabled True, id "attr_WS", type_ "text", value "0"] [ ] ]
+                        --   ]
+                        -- ]
+                        statBox (Stats.WS, model.weaponSkill)
                         -- BallisticSkill (BS) --
                       , div [ class "w3-row-padding"]
                         [ div [ class "w3-half"] [
@@ -247,6 +398,21 @@ view _ =
                 , br [] [] -- break between Characteristics and Unnaturals --
                 , hr [ class "sheet-dhhr"] []
                 , div [ class "w3-row-padding"]
+                  [ div [ class "w3-half"] [ p [style "text-align" "center"
+                                               , style "font-size" "1.25em"
+                                               , style "font-weight" "600"
+                                               --, style "horizontal-align" "center"
+                                               --, style "margin" "0 auto"
+                                               ] [text "Experience"]]
+                  , div [ class "w3-half"]
+                    [ let cellStyle = style "text-align" "center" in
+                        table [ style "margin" "0 auto" ]
+                        [ tr [] [ td [ cellStyle ] [text "Free exp."], td [ cellStyle ] [ text <| String.fromInt model.freeExp ] ]
+                        , tr [] [ td [ cellStyle ] [text "Used exp."], td [ cellStyle ] [ text <| String.fromInt model.spentExp ] ]
+                        ]
+                    ]
+                  ]
+                , div [ class "w3-row-padding"]
                   [ div [ class "w3-half"]
                     [ h3 [] [text "Wounds"]
                     , div [ class "w3-row"] [
@@ -292,15 +458,11 @@ view _ =
                   ]
                 ]
 
-              , div [ class "w3-half"] -- Right Side --
+              , div [ class "w3-half"] <| -- Right Side --
                 [ h3 [] [text "Skills"] -- Right Column (Skills) --
-                , div [ class "w3-row", id "defaultSkill", style "display" "none"] [
-                    div [ class "sheet-item w3-center underline", style "width" "100%"] [
-                      span [ class "skillDetail"] []
-                    ]
-                  ]
-
-                , br [] [] -- Break between Skills and Talents
+                ] ++ List.map skillView (Array.toList model.skills) ++
+                [skillSelect] ++
+                [ br [] [] -- Break between Skills and Talents
                 , hr [ class "sheet-dhhr"] []
                 , h3 [] [text "Talents"]
                 , div [ class "w3-row", id "defaultTalent", style "display" "none"] [
@@ -312,40 +474,40 @@ view _ =
                 , br [] []-- Break between Talents and Aptitudes
                 , hr [ class "sheet-dhhr"] []
                 , h3 [] [text "Aptitudes"]
-                , div [ class "w3-row", id "aptitudeContainer"]
-                  [ div [ class "w3-row"]
-                    [ div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude0"] []
-                      ]
-                    , div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude1"] []
-                      ]
-                    ]
-                  , div [ class "w3-row"]
-                    [ div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude2"] []
-                      ]
-                    , div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude3"] []
-                      ]
-                    ]
-                  , div [ class "w3-row"]
-                    [ div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude4"] []
-                      ]
-                    , div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude5"] []
-                      ]
-                    ]
-                  , div [ class "w3-row"]
-                    [ div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline",  id "aptitude6"] []
-                      ]
-                    , div [ class "w3-half"] [
-                        span [ class "sheet-item w3-center underline", id "aptitude7"] []
-                      ]
-                    ]
-                  ]
+                , div [ class "w3-row", id "aptitudeContainer"] (aptitudesView model.aptitudes)
+                  --[ div [ class "w3-row"]
+                  --  [ div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude0"] []
+                  --    ]
+                  --  , div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude1"] []
+                  --    ]
+                  --  ]
+                  --, div [ class "w3-row"]
+                  --  [ div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude2"] []
+                  --    ]
+                  --  , div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude3"] []
+                  --    ]
+                  --  ]
+                  --, div [ class "w3-row"]
+                  --  [ div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude4"] []
+                  --    ]
+                  --  , div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude5"] []
+                  --    ]
+                  --  ]
+                  --, div [ class "w3-row"]
+                  --  [ div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline",  id "aptitude6"] []
+                  --    ]
+                  --  , div [ class "w3-half"] [
+                  --      span [ class "sheet-item w3-center underline", id "aptitude7"] []
+                  --    ]
+                  --  ]
+                  --]
                 ]
 
               ]
