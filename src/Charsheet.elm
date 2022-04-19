@@ -2,6 +2,7 @@ module Charsheet exposing (..)
 import Array exposing (Array)
 import Array.NonEmpty
 import Browser
+import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
@@ -23,7 +24,11 @@ main = Browser.element
 --type alias Msg = String
 type Msg = Increase ModelLens
          | Decrease ModelLens
-         | AddS Skill
+         | AddSkill Skill
+         | RmSkill String
+         | Drop String
+         | AddTemp Skill
+         | AddSpec String Skill
          | Upgrade -- Skill
          | Degrade -- Skill
          | Add -- Talent
@@ -35,14 +40,16 @@ type alias Model =
   , freeExp: Int
   , spentExp: Int
   , aptitudes: List Aptitude
-  , skills: Array Skill
+  , skills: Dict String (Skill, Int)
+  , temp: Maybe Skill
+  , drop: String
   }
 
-type alias SkillView = (Skill, String, Int)
-viewSkill (skill, spec, lvl) =
+type alias SkillView = (String, Int)
+viewSkill (skill, spec) =
   case spec of
-    "" -> skill.name ++ " +" ++ String.fromInt lvl
-    _  -> skill.name ++ " (" ++ spec ++ ")" ++ " +" ++ String.fromInt lvl
+    "" -> skill.name
+    _  -> skill.name ++ " (" ++ spec ++ ")"
 
 type alias ModelLens = FieldLens Model Int Int Model
 weaponSkill : ModelLens
@@ -62,7 +69,9 @@ init _ =
                   , StatApt Per
                   , StatApt Tou
                   ]
-    , skills = Array.fromList [ Skills.logic , Skills.acrobatics ]
+    , skills = Dict.fromList <| List.map (\v -> (v.name, (v, 0))) [ Skills.logic , Skills.acrobatics ]
+    , temp = Nothing
+    , drop = "none"
     }
   , Cmd.none)
 
@@ -103,7 +112,11 @@ update msg model =
   case msg of
     Increase f -> (modify f (\v -> v + 5) model, Cmd.none)
     Decrease f -> (modify f (\v -> v - 5) model, Cmd.none)
-    AddS skill -> ({ model | skills = Array.push skill model.skills }, Cmd.none)
+    AddSkill skill -> ({ model | skills = Dict.insert skill.name (skill, 0) model.skills }, Cmd.none)
+    RmSkill name -> ({ model | skills = Dict.remove name model.skills }, Cmd.none)
+    AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
+    AddSpec name skill -> ({ model | temp = Nothing, skills = Dict.insert name (skill, 0) model.skills }, Cmd.none)
+    Drop state -> ({ model | drop = state }, Cmd.none)
     _ -> (model, Cmd.none)
 
 statBox: Stat -> Html Msg
@@ -141,31 +154,53 @@ aptitudesView aptList =
           [] -> []
   in combine aptList
 
-skillView: Skill -> Html Msg
-skillView skill =
+skillView: (String, (Skill, Int)) -> Html Msg
+skillView (name, (skill, lvl)) =
   div [ class "w3-row"{-, id "defaultSkill", style "display" "none"-}]
   [ div [ class "sheet-item w3-center underline", style "width" "100%"]
-    [ span [ class "skillDetail"] [ text skill.name ]
+    [ span [ class "skillDetail"] [ text <| name ++ " +" ++ String.fromInt lvl ]
+    , button [ style "height" "100%", style "float" "right"] [ text "+" ]
+    , button [ style "height" "100%", style "float" "right"
+             , onClick <| RmSkill name
+             ]
+      [ text "X" ]
     ]
   ]
 
-handler =
-  on "change" (Json.map (\idx -> AddS (Skills.get idx)) <| Json.at ["target", "valueAsNumber"] Json.int)
+tempView: Skill -> Html Msg
+tempView skill =
+  let idxSpec f = Array.toList <| Array.indexedMap f skill.specs
+      getSpec idx = Array.get idx skill.specs
+      formName spec = viewSkill (skill, Maybe.withDefault "" spec)
+  in
+  div [ class "w3-row" ]
+  [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
+    [ span [ class "skillDetail", style "margin-right" "5px" ] [ text <| skill.name ]
+    , select [ selectHandler (\idx -> AddSpec (formName (getSpec idx)) skill) , style "width" "50%" ]
+      (idxSpec <| \idx name -> option [style "text-align" "center", value <| String.fromInt idx] [text name])
+    --, button [ style "height" "100%", style "float" "right"] [ text "+" ]
+    --, button [ style "height" "100%", style "float" "right"
+    --         , onClick <| RmSkill skill.name
+    --         ]
+    --  [ text "X" ]
+    ]
+  ]
 
-handler1 =
-  onChange (\_ -> (AddS Skills.parry))
+skillSelectAction idx =
+  let skill = Skills.get (idx - 1)
+  in if Array.isEmpty skill.specs
+    then AddSkill skill
+    else AddTemp skill
 
-handler2 =
-  onChange (\s -> Debug.log s (AddS Skills.parry))
-
-handler3 =
-  on "change" (Json.map (\idx -> AddS (Skills.get (idx - 1))) <| Json.at ["target", "selectedIndex"] Json.int)
+selectHandler: (Int -> Msg) -> Attribute Msg
+selectHandler action =
+  on "change" <| Json.map action <| Json.at ["target", "selectedIndex"] Json.int
 
 skillSelect: Html Msg
 skillSelect =
   let opt (idx, skill) = option [style "text-align" "center", value (String.fromInt idx)] [ text <| .name skill ]
-      add = onClick << AddS
-  in select [ handler3 ] <|
+      add = onClick << AddSkill
+  in select [ selectHandler skillSelectAction ] <|
       [ option [style "text-align" "center"] [ text "Learn new skill" ]
       ] ++ List.map (opt) (Array.NonEmpty.toIndexedList skillArray)
 
@@ -460,8 +495,13 @@ view model =
 
               , div [ class "w3-half"] <| -- Right Side --
                 [ h3 [] [text "Skills"] -- Right Column (Skills) --
-                ] ++ List.map skillView (Array.toList model.skills) ++
-                [skillSelect] ++
+                ] ++ List.map skillView (Dict.toList model.skills) ++
+                (case model.temp of
+                  Just tSkill -> [tempView tSkill]
+                  Nothing -> [skillSelect]
+                ) ++
+                --[skillSelect] ++
+                --[skillDropdown model] ++
                 [ br [] [] -- Break between Skills and Talents
                 , hr [ class "sheet-dhhr"] []
                 , h3 [] [text "Talents"]

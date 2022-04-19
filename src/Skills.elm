@@ -8,10 +8,11 @@ import Array.NonEmpty
 type alias Skill = { name: String
                    , localizedName: String
                    , aptitudes: List Aptitude
-                   , specs: List String
+                   , specs: Array String
                    }
 
 forbiddenLoreSpecs =
+  Array.fromList
   [ "Archeotech"
   , "Chaos Marines"
   , "Criminal Organizations & Contraband"
@@ -28,6 +29,7 @@ forbiddenLoreSpecs =
   ]
 
 commonLoreSpecs =
+  Array.fromList
   [ "Sororitas"
   , "Arbitres"
   , "Astra Telepatica"
@@ -51,6 +53,7 @@ commonLoreSpecs =
   ]
 
 scholarLoreSpecs =
+  Array.fromList
   [ "Astromancy|Astronomy"
   , "Beasts"
   , "Bureaucracy"
@@ -67,12 +70,14 @@ scholarLoreSpecs =
   ]
 
 operateSpecs =
+  Array.fromList
   [ "Land"
   , "Air"
   , "Space"
   ]
 
 tradeSpecs =
+  Array.fromList
   [ "Agronomics"
   , "Archeology"
   , "Weaponsmithing"
@@ -94,6 +99,7 @@ tradeSpecs =
   ]
 
 linguisticsSpecs =
+  Array.fromList
   [ "Astartes Runes"
   , "Chaos Symbols"
   , "Aeldar"
@@ -109,34 +115,34 @@ linguisticsSpecs =
   , "Xenos marks"
   ]
 
-navigationSpecs = [ "Land", "Space", "Warp" ]
+navigationSpecs = Array.fromList [ "Land", "Space", "Warp" ]
 
-acrobatics = Skill "Acrobatics" "Акробатика" [StatApt Ag, General] []
-athletics = Skill "Athletics" "Атлетика" [StatApt Str, General] []
-awareness = Skill "Awareness" "Бдительность" [StatApt Per, Fieldcraft] []
-security = Skill "Security" "Безопасность" [StatApt Int, Tech] []
-survival = Skill "Survival" "Выживание" [StatApt Per, Fieldcraft] []
-inquiry = Skill "Inquiry" "Дознание | Сбор сведений" [StatApt Fell, Social] []
-interrogation = Skill "Interrogation" "Допрос" [StatApt Will, Social] []
+acrobatics = Skill "Acrobatics" "Акробатика" [StatApt Ag, General] Array.empty
+athletics = Skill "Athletics" "Атлетика" [StatApt Str, General] Array.empty
+awareness = Skill "Awareness" "Бдительность" [StatApt Per, Fieldcraft] Array.empty
+security = Skill "Security" "Безопасность" [StatApt Int, Tech] Array.empty
+survival = Skill "Survival" "Выживание" [StatApt Per, Fieldcraft] Array.empty
+inquiry = Skill "Inquiry" "Дознание | Сбор сведений" [StatApt Fell, Social] Array.empty
+interrogation = Skill "Interrogation" "Допрос" [StatApt Will, Social] Array.empty
 forbiddenLore = Skill "Forbidden Lore" "Запретные знания" [StatApt Int, Knowledge] forbiddenLoreSpecs
-intimidate = Skill "Intimidate" "Запугивание" [StatApt Str, Social] []
-command = Skill "Command" "Командование" [StatApt Fell, Leadership] []
-commerce = Skill "Commerce" "Коммерция" [StatApt Int, Knowledge] []
+intimidate = Skill "Intimidate" "Запугивание" [StatApt Str, Social] Array.empty
+command = Skill "Command" "Командование" [StatApt Fell, Leadership] Array.empty
+commerce = Skill "Commerce" "Коммерция" [StatApt Int, Knowledge] Array.empty
 linguistics = Skill "Linguistics" "Лингвистика" [StatApt Int, General] linguisticsSpecs
-sleightOfHand = Skill "Sleight of Hand" "Ловкость рук" [StatApt Ag, Knowledge] []
-logic = Skill "Logic" "Логика" [StatApt Int, Knowledge] []
-medicae = Skill "Medicae" "Медицина" [StatApt Int, Fieldcraft] []
+sleightOfHand = Skill "Sleight of Hand" "Ловкость рук" [StatApt Ag, Knowledge] Array.empty
+logic = Skill "Logic" "Логика" [StatApt Int, Knowledge] Array.empty
+medicae = Skill "Medicae" "Медицина" [StatApt Int, Fieldcraft] Array.empty
 navigate = Skill "Navigate" "Навигация" [StatApt Int, Fieldcraft] navigationSpecs
-deceive = Skill "Deceive" "Обман" [StatApt Fell, Social] []
-charm = Skill "Charm" "Обаяние" [StatApt Fell, Social] []
+deceive = Skill "Deceive" "Обман" [StatApt Fell, Social] Array.empty
+charm = Skill "Charm" "Обаяние" [StatApt Fell, Social] Array.empty
 commonLore = Skill "Common Lore" "Общие знания | Обыденные знания" [StatApt Int, General] commonLoreSpecs
-parry = Skill "Parry" "Парирование" [StatApt WS, Defence] []
-scrutiny = Skill "Scrutiny" "Проницательность | Внимание к деталям" [StatApt Per, General] []
-psyniscience = Skill "Psyniscience" "Псинистика | Пси-наука | Психонаука" [StatApt Per, Psyker] []
+parry = Skill "Parry" "Парирование" [StatApt WS, Defence] Array.empty
+scrutiny = Skill "Scrutiny" "Проницательность | Внимание к деталям" [StatApt Per, General] Array.empty
+psyniscience = Skill "Psyniscience" "Псинистика | Пси-наука | Психонаука" [StatApt Per, Psyker] Array.empty
 trade = Skill "Trade" "Ремесло" [StatApt Int, General] tradeSpecs
-stealth = Skill "Stealth" "Скрытность" [StatApt Ag, Fieldcraft] []
-techUse = Skill "Tech-Use" "Техпользование" [StatApt Int, Tech] []
-dodge = Skill "Dodge" "Уклонение" [StatApt Ag, Defence] []
+stealth = Skill "Stealth" "Скрытность" [StatApt Ag, Fieldcraft] Array.empty
+techUse = Skill "Tech-Use" "Техпользование" [StatApt Int, Tech] Array.empty
+dodge = Skill "Dodge" "Уклонение" [StatApt Ag, Defence] Array.empty
 operate = Skill "Operate" "Управление" [StatApt Ag, Fieldcraft] operateSpecs
 scholasticLore = Skill "Scholastic Lore" "Учёные знания" [StatApt Int, Knowledge] scholarLoreSpecs
 
