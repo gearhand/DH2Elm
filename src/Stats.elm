@@ -1,5 +1,6 @@
 module Stats exposing (..)
 
+import Util
 type StatName = WS
           | BS
           | Str
@@ -56,3 +57,21 @@ fullName s =
     Infl -> "Influence"
 
 type alias Stat = (StatName, Int)
+
+aptMap: StatName -> List Aptitude
+aptMap stat =
+  StatApt stat :: case stat of
+    WS -> [Offence]
+    BS -> [Finesse]
+    Str -> [Offence]
+    Tou -> [Defence]
+    Ag -> [Finesse]
+    Int -> [Knowledge]
+    Per -> [Fieldcraft]
+    Will -> [Psyker]
+    Fell -> [Social]
+    Infl -> []
+
+aptsCounter: List Aptitude -> List Aptitude -> Int
+aptsCounter charApts =
+  List.foldl (\el acc -> if Util.contains charApts el then acc + 1 else acc) 0

@@ -1,18 +1,16 @@
 module Charsheet exposing (..)
 import Array exposing (Array)
-import Array.NonEmpty
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
-import Html.Events.Extra exposing (onChange)
-import List exposing (foldl)
+import Maybe exposing (andThen)
 import Skills exposing (Skill, skillArray)
 import Stats exposing (Aptitude(..), Stat, StatName(..), aptToString)
 import FieldLens exposing (FieldLens, modify)
-import String exposing (fromInt)
 import Json.Decode as Json
+import Util exposing (applyM)
 
 main = Browser.element
   { init = init
@@ -21,19 +19,18 @@ main = Browser.element
   , subscriptions = subscriptions
   }
 
---type alias Msg = String
-type Msg = Increase ModelLens
-         | Decrease ModelLens
-         | AddSkill Skill
+type Msg = StatUp ModelLens
+         | StatDown ModelLens
          | RmSkill String
          | Drop String
          | AddTemp Skill
          | AddSpec String Skill
-         | Upgrade -- Skill
-         | Degrade -- Skill
+         | SkillUp String
+         | SkillDown String
          | Add -- Talent
          | Remove -- Talent
          | Placeholder String
+         | Empty
 
 type alias Model =
   { weaponSkill: Int
@@ -58,7 +55,7 @@ weaponSkill = FieldLens .weaponSkill (\v r -> { r | weaponSkill = v })
 init: () -> (Model, Cmd Msg)
 init _ =
   ( { weaponSkill = 20
-    , freeExp = 1000
+    , freeExp = 600
     , spentExp = 0
     , aptitudes = [ StatApt Ag
                   , StatApt BS
@@ -75,30 +72,16 @@ init _ =
     }
   , Cmd.none)
 
-aptMap: StatName -> List Aptitude
-aptMap stat =
-  StatApt stat :: case stat of
-    WS -> [Offence]
-    BS -> [Finesse]
-    Str -> [Offence]
-    Tou -> [Defence]
-    Ag -> [Finesse]
-    Int -> [Knowledge]
-    Per -> [Fieldcraft]
-    Will -> [Psyker]
-    Fell -> [Social]
-    Infl -> []
+foo: {a | weaponSkill: b} -> b
+foo = .weaponSkill
 
+getSkillUpCost: List Aptitude -> (Skill, Int) -> Maybe Int
+getSkillUpCost charApts (skill, lvl) =
+  Skills.getCost (Stats.aptsCounter charApts skill.aptitudes, lvl + 10)
 
-contains: List a -> a -> Bool
-contains lst el =
-  case lst of
-    x::xs -> if el == x then True else contains xs el
-    [] -> False
-
-aptsCounter: List Aptitude -> List Aptitude -> Int
-aptsCounter charApts =
-  List.foldl (\el acc -> if contains charApts el then acc + 1 else acc) 0
+getSkillDownCost: List Aptitude -> (Skill, Int) -> Maybe Int
+getSkillDownCost charApts (skill, lvl) =
+  Skills.getCost (Stats.aptsCounter charApts skill.aptitudes, lvl)
 
 statProgression =
   Array.fromList [ [500, 750, 1000, 1500, 2500]
@@ -106,16 +89,62 @@ statProgression =
                  , [100, 250, 500, 750, 1250]
                  ]
 
+payCost: Int -> Model -> Model
+payCost cost model =
+  { model | spentExp = model.spentExp + cost, freeExp = model.freeExp - cost }
+
+refund: Int -> Model -> Model
+refund cost model =
+  { model | spentExp = model.spentExp - cost, freeExp = model.freeExp + cost }
+
+skillUp: Model -> String -> Model
+skillUp model sName =
+  let skill = Dict.get sName model.skills
+      cost  = andThen <| getSkillUpCost model.aptitudes
+      sAdj (s,lvl) m = { m | skills = Dict.insert sName (s, lvl + 10) m.skills }
+      pay = Maybe.map payCost <| cost skill
+      adj = Maybe.map sAdj skill
+  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
+
+skillDown: Model -> String -> Model
+skillDown model sName =
+  let skill = Dict.get sName model.skills
+      cost  = andThen <| getSkillDownCost model.aptitudes
+      sAdj (s,lvl) m = { m | skills = Dict.insert sName (s, lvl - 10) m.skills }
+      pay = Maybe.map refund <| cost skill
+      adj = Maybe.map sAdj skill
+  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
+
+skillAdd: Model -> String -> Skill -> Model
+skillAdd model sName skill =
+  let skill_ = Dict.get sName model.skills
+      cost  = getSkillDownCost model.aptitudes (skill, 0) -- We need current lvl cost, so it's downCost function
+      sAdj s m = { m | skills = Dict.insert sName (s, 0) m.skills, temp = Nothing }
+      pay = Maybe.map payCost cost
+      adj = Just (sAdj skill)
+  in case skill_ of
+    Just _ -> model
+    Nothing -> applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
+
+skillRm: Model -> String -> Model
+skillRm model sName =
+  let skill = Dict.get sName model.skills
+      cost  = andThen <| getSkillDownCost model.aptitudes
+      sAdj m = { m | skills = Dict.remove sName m.skills }
+      pay = Maybe.map refund <| cost skill
+      adj = Just sAdj
+  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
 
 update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    Increase f -> (modify f (\v -> v + 5) model, Cmd.none)
-    Decrease f -> (modify f (\v -> v - 5) model, Cmd.none)
-    AddSkill skill -> ({ model | skills = Dict.insert skill.name (skill, 0) model.skills }, Cmd.none)
-    RmSkill name -> ({ model | skills = Dict.remove name model.skills }, Cmd.none)
+    StatUp f -> (modify f (\v -> v + 5) model, Cmd.none)
+    StatDown f -> (modify f (\v -> v - 5) model, Cmd.none)
+    SkillUp sName -> (skillUp model sName, Cmd.none)
+    SkillDown sName -> (skillDown model sName, Cmd.none)
+    RmSkill sName -> (skillRm model sName, Cmd.none)
     AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
-    AddSpec name skill -> ({ model | temp = Nothing, skills = Dict.insert name (skill, 0) model.skills }, Cmd.none)
+    AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
     Drop state -> ({ model | drop = state }, Cmd.none)
     _ -> (model, Cmd.none)
 
@@ -137,8 +166,8 @@ statBox ((sname, sval) as stat) =
       ]
     ]
   , div [ class "w3-rest" ]
-    [ button [ style "height" "33px", style "width" "100%", onClick <| Increase weaponSkill ] [ text "+" ]
-    , button [ style "height" "33px", style "width" "100%", onClick <| Decrease weaponSkill ] [ text "-" ]
+    [ button [ style "height" "33px", style "width" "100%", onClick <| StatUp weaponSkill ] [ text "+" ]
+    , button [ style "height" "33px", style "width" "100%", onClick <| StatDown weaponSkill ] [ text "-" ]
     ]
   ]
 
@@ -154,16 +183,22 @@ aptitudesView aptList =
           [] -> []
   in combine aptList
 
-skillView: (String, (Skill, Int)) -> Html Msg
-skillView (name, (skill, lvl)) =
+skillView: Model -> (String, (Skill, Int)) -> Html Msg
+skillView model (name, (skill, lvl)) =
   div [ class "w3-row"{-, id "defaultSkill", style "display" "none"-}]
   [ div [ class "sheet-item w3-center underline", style "width" "100%"]
     [ span [ class "skillDetail"] [ text <| name ++ " +" ++ String.fromInt lvl ]
-    , button [ style "height" "100%", style "float" "right"] [ text "+" ]
     , button [ style "height" "100%", style "float" "right"
-             , onClick <| RmSkill name
-             ]
-      [ text "X" ]
+             , onClick <| SkillUp name
+             , disabled (lvl >= 30 || Maybe.withDefault 100000 (getSkillUpCost model.aptitudes (skill, lvl)) > model.freeExp)
+             ] [ text "+" ]
+    , if lvl > 0
+        then button [ style "height" "100%", style "float" "right"
+                    , onClick <| SkillDown name
+                    ] [ text "-" ]
+        else button [ style "height" "100%", style "float" "right"
+                    , onClick <| RmSkill name
+                    ] [ text "X" ]
     ]
   ]
 
@@ -176,21 +211,18 @@ tempView skill =
   div [ class "w3-row" ]
   [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
     [ span [ class "skillDetail", style "margin-right" "5px" ] [ text <| skill.name ]
-    , select [ selectHandler (\idx -> AddSpec (formName (getSpec idx)) skill) , style "width" "50%" ]
-      (idxSpec <| \idx name -> option [style "text-align" "center", value <| String.fromInt idx] [text name])
-    --, button [ style "height" "100%", style "float" "right"] [ text "+" ]
-    --, button [ style "height" "100%", style "float" "right"
-    --         , onClick <| RmSkill skill.name
-    --         ]
-    --  [ text "X" ]
+    , select [ selectHandler (\idx -> AddSpec (formName (getSpec idx)) skill) , style "width" "50%" ] <|
+        idxSpec <| \idx name -> option [style "text-align" "center", value <| String.fromInt idx] [text name]
     ]
   ]
 
+skillSelectAction: Int -> Msg
 skillSelectAction idx =
-  let skill = Skills.get (idx - 1)
-  in if Array.isEmpty skill.specs
-    then AddSkill skill
-    else AddTemp skill
+  case Skills.get (idx - 1) of
+    Just skill -> if Array.isEmpty skill.specs
+                    then AddSpec skill.name skill
+                    else AddTemp skill
+    Nothing -> Empty
 
 selectHandler: (Int -> Msg) -> Attribute Msg
 selectHandler action =
@@ -199,10 +231,9 @@ selectHandler action =
 skillSelect: Html Msg
 skillSelect =
   let opt (idx, skill) = option [style "text-align" "center", value (String.fromInt idx)] [ text <| .name skill ]
-      add = onClick << AddSkill
   in select [ selectHandler skillSelectAction ] <|
       [ option [style "text-align" "center"] [ text "Learn new skill" ]
-      ] ++ List.map (opt) (Array.NonEmpty.toIndexedList skillArray)
+      ] ++ List.map (opt) (Array.toIndexedList skillArray)
 
 subscriptions: Model -> Sub Msg
 subscriptions _ = Sub.none
@@ -495,7 +526,7 @@ view model =
 
               , div [ class "w3-half"] <| -- Right Side --
                 [ h3 [] [text "Skills"] -- Right Column (Skills) --
-                ] ++ List.map skillView (Dict.toList model.skills) ++
+                ] ++ List.map (skillView model) (Dict.toList model.skills) ++
                 (case model.temp of
                   Just tSkill -> [tempView tSkill]
                   Nothing -> [skillSelect]

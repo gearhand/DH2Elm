@@ -1,9 +1,7 @@
 module Skills exposing (..)
 
 import Array exposing (Array)
-import FieldLens exposing (FieldLens)
 import Stats exposing (Aptitude(..), StatName(..))
-import Array.NonEmpty
 
 type alias Skill = { name: String
                    , localizedName: String
@@ -146,7 +144,8 @@ dodge = Skill "Dodge" "Уклонение" [StatApt Ag, Defence] Array.empty
 operate = Skill "Operate" "Управление" [StatApt Ag, Fieldcraft] operateSpecs
 scholasticLore = Skill "Scholastic Lore" "Учёные знания" [StatApt Int, Knowledge] scholarLoreSpecs
 
-skillArray_ =
+skillArray =
+  Array.fromList
   [ acrobatics
   , athletics
   , awareness
@@ -177,12 +176,7 @@ skillArray_ =
   , scholasticLore
   ]
 
-skillArray =
-  case skillArray_ of
-    (head::tail) -> List.foldl (\v a -> Array.NonEmpty.push v a) (Array.NonEmpty.fromElement head) tail
-    [] -> Debug.todo "Skill array creation error"
-
-get idx = Array.NonEmpty.getSelected <| Array.NonEmpty.setSelectedIndex idx skillArray
+get idx = Array.get idx skillArray
 
 skillProgression: Array (Array Int)
 skillProgression =
@@ -192,11 +186,9 @@ skillProgression =
   , [ 100, 200, 300, 400 ]
   ]
 
-getCost: (Int, Int) -> Int
+getCost: (Int, Int) -> Maybe Int
 getCost (apts, lvl) =
-  case Array.get apts skillProgression |> Maybe.andThen (Array.get lvl) of
-    Just x -> x
-    Nothing -> Debug.todo "Cannot get cost"
+  Array.get apts skillProgression |> Maybe.andThen (Array.get (lvl // 10))
 
 
 
