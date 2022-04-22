@@ -5,10 +5,11 @@ import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
+import Html.Events.Extra exposing (targetValueInt)
 import Maybe exposing (andThen, withDefault)
 import Skills exposing (Skill, skillArray)
 import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
-import FieldLens exposing (FieldLens, modify)
+import FieldLens exposing (FieldLens)
 import Json.Decode as Json
 import Util exposing (applyM)
 
@@ -26,11 +27,11 @@ subscriptions _ = Sub.none
 type Msg = StatUp ModelLens
          | StatDown ModelLens
          | RmSkill String
-         | Drop String
          | AddTemp Skill
          | AddSpec String Skill
          | SkillUp String
          | SkillDown String
+         | UpdateExp Int
          | Add -- Talent
          | Remove -- Talent
          | Placeholder String
@@ -201,7 +202,7 @@ update msg model =
     RmSkill sName -> (skillRm model sName, Cmd.none)
     AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
     AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
-    Drop state -> ({ model | drop = state }, Cmd.none)
+    UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
     _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
@@ -296,6 +297,13 @@ skillSelect =
   in select [ selectHandler skillSelectAction ] <|
       [ option [style "text-align" "center"] [ text "Learn new skill" ]
       ] ++ List.map (opt) (Array.toIndexedList skillArray)
+
+freeExpView model =
+  input [ style "text-align" "center", style "width" "100px", style "margin-left" "5px"
+        , type_ "number", value <| String.fromInt model.freeExp
+        , on "input" <| Json.map UpdateExp <| targetValueInt
+        ]
+  [ text <| String.fromInt model.freeExp]
 
 view: Model -> Html Msg
 view model =
@@ -411,7 +419,7 @@ view model =
                   , div [ class "w3-half"]
                     [ let cellStyle = style "text-align" "center" in
                         table [ style "margin" "0 auto" ]
-                        [ tr [] [ td [ cellStyle ] [text "Free exp."], td [ cellStyle ] [ text <| String.fromInt model.freeExp ] ]
+                        [ tr [] [ td [ cellStyle ] [text "Free exp."], td [ cellStyle ] [ freeExpView model ] ]
                         , tr [] [ td [ cellStyle ] [text "Used exp."], td [ cellStyle ] [ text <| String.fromInt model.spentExp ] ]
                         ]
                     ]
