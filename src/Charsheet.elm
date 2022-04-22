@@ -5,9 +5,9 @@ import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
-import Maybe exposing (andThen)
+import Maybe exposing (andThen, withDefault)
 import Skills exposing (Skill, skillArray)
-import Stats exposing (Aptitude(..), Stat, StatName(..), aptToString)
+import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens, modify)
 import Json.Decode as Json
 import Util exposing (applyM)
@@ -18,6 +18,10 @@ main = Browser.element
   , update = update
   , subscriptions = subscriptions
   }
+
+subscriptions: Model -> Sub Msg
+subscriptions _ = Sub.none
+
 
 type Msg = StatUp ModelLens
          | StatDown ModelLens
@@ -33,7 +37,16 @@ type Msg = StatUp ModelLens
          | Empty
 
 type alias Model =
-  { weaponSkill: Int
+  { weaponSkill: (Int, Int, List Aptitude)
+  , ballisticSkill: (Int, Int, List Aptitude)
+  , strength: (Int, Int, List Aptitude)
+  , toughness: (Int, Int, List Aptitude)
+  , agility: (Int, Int, List Aptitude)
+  , intelligence: (Int, Int, List Aptitude)
+  , perception: (Int, Int, List Aptitude)
+  , willpower: (Int, Int, List Aptitude)
+  , fellowship: (Int, Int, List Aptitude)
+  , influence: Int
   , freeExp: Int
   , spentExp: Int
   , aptitudes: List Aptitude
@@ -48,14 +61,47 @@ viewSkill (skill, spec) =
     "" -> skill.name
     _  -> skill.name ++ " (" ++ spec ++ ")"
 
-type alias ModelLens = FieldLens Model Int Int Model
+type alias ModelLens = FieldLens Model (Int, Int, List Aptitude) Int Model
 weaponSkill : ModelLens
-weaponSkill = FieldLens .weaponSkill (\v r -> { r | weaponSkill = v })
+weaponSkill = FieldLens .weaponSkill (\v r -> let (_, base, apts) = r.weaponSkill in { r | weaponSkill = (v, base, apts) })
+
+ballisticSkill : ModelLens
+ballisticSkill = FieldLens .ballisticSkill (\v r -> let (_, base, apts) = r.ballisticSkill in { r | ballisticSkill = (v, base, apts) })
+
+strength : ModelLens
+strength = FieldLens .strength (\v r -> let (_, base, apts) = r.strength in { r | strength = (v, base, apts) })
+
+toughness : ModelLens
+toughness = FieldLens .toughness (\v r -> let (_, base, apts) = r.toughness in { r | toughness = (v, base, apts) })
+
+agility : ModelLens
+agility = FieldLens .agility (\v r -> let (_, base, apts) = r.agility in { r | agility = (v, base, apts) })
+
+intelligence : ModelLens
+intelligence = FieldLens .intelligence (\v r -> let (_, base, apts) = r.intelligence in { r | intelligence = (v, base, apts) })
+
+perception : ModelLens
+perception = FieldLens .perception (\v r -> let (_, base, apts) = r.perception in { r | perception = (v, base, apts) })
+
+willpower : ModelLens
+willpower = FieldLens .willpower (\v r -> let (_, base, apts) = r.willpower in { r | willpower = (v, base, apts) })
+
+fellowship : ModelLens
+fellowship = FieldLens .fellowship (\v r -> let (_, base, apts) = r.fellowship in { r | fellowship = (v, base, apts) })
 
 init: () -> (Model, Cmd Msg)
 init _ =
-  ( { weaponSkill = 20
-    , freeExp = 600
+  ( { weaponSkill = (0, 20, aptMap WS)
+    , ballisticSkill = (0, 20, aptMap BS)
+    , strength = (0, 20, aptMap Str)
+    , toughness = (0, 20, aptMap Tou)
+    , agility = (0, 20, aptMap Ag)
+    , intelligence = (0, 20, aptMap Int)
+    , perception = (0, 20, aptMap Per)
+    , willpower = (0, 20, aptMap Will)
+    , fellowship = (0, 20, aptMap Fell)
+    , influence = 20
+    , freeExp = 6000
     , spentExp = 0
     , aptitudes = [ StatApt Ag
                   , StatApt BS
@@ -72,8 +118,8 @@ init _ =
     }
   , Cmd.none)
 
-foo: {a | weaponSkill: b} -> b
-foo = .weaponSkill
+--foo: {a | weaponSkill: b} -> b
+--foo = .weaponSkill
 
 getSkillUpCost: List Aptitude -> (Skill, Int) -> Maybe Int
 getSkillUpCost charApts (skill, lvl) =
@@ -82,12 +128,6 @@ getSkillUpCost charApts (skill, lvl) =
 getSkillDownCost: List Aptitude -> (Skill, Int) -> Maybe Int
 getSkillDownCost charApts (skill, lvl) =
   Skills.getCost (Stats.aptsCounter charApts skill.aptitudes, lvl)
-
-statProgression =
-  Array.fromList [ [500, 750, 1000, 1500, 2500]
-                 , [250, 500, 750, 1000, 1500]
-                 , [100, 250, 500, 750, 1250]
-                 ]
 
 payCost: Int -> Model -> Model
 payCost cost model =
@@ -135,11 +175,27 @@ skillRm model sName =
       adj = Just sAdj
   in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
 
+statUp: Model -> ModelLens -> Model
+statUp model lens =
+  let (val, _, apts) = FieldLens.get lens model
+      aCnt = Stats.aptsCounter model.aptitudes apts
+      cost = Stats.getCost aCnt val
+      pay = Maybe.map payCost cost
+  in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val+1)) |> Maybe.withDefault model
+
+statDown: Model -> ModelLens -> Model
+statDown model lens =
+  let (val, _, apts) = FieldLens.get lens model
+      aCnt = Stats.aptsCounter model.aptitudes apts
+      cost = Stats.getCost aCnt (val - 1)
+      pay = Maybe.map refund cost
+  in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val - 1)) |> Maybe.withDefault model
+
 update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    StatUp f -> (modify f (\v -> v + 5) model, Cmd.none)
-    StatDown f -> (modify f (\v -> v - 5) model, Cmd.none)
+    StatUp f -> (statUp model f, Cmd.none)
+    StatDown f -> (statDown model f, Cmd.none)
     SkillUp sName -> (skillUp model sName, Cmd.none)
     SkillDown sName -> (skillDown model sName, Cmd.none)
     RmSkill sName -> (skillRm model sName, Cmd.none)
@@ -148,8 +204,12 @@ update msg model =
     Drop state -> ({ model | drop = state }, Cmd.none)
     _ -> (model, Cmd.none)
 
-statBox: Stat -> Html Msg
-statBox ((sname, sval) as stat) =
+statBox: StatName -> Model -> ModelLens -> Html Msg
+statBox sName model lens =
+  let (sVal, sBase, sApts) = FieldLens.get lens model
+      aCnt = Stats.aptsCounter model.aptitudes sApts
+      upCost = Stats.getCost aCnt sVal
+  in
   div [ class "w3-row-padding"]
   [ div [ class "w3-half"]
     [ div
@@ -157,17 +217,19 @@ statBox ((sname, sval) as stat) =
       , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
       ]
       [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"]
-        [text <| Stats.fullName sname]
+        [text <| Stats.fullName sName]
       ]
     ]
   , div [ class "w3-third"]
     [ div [ class "sheet-unnatural_box" ]
-      [ input [ disabled True, id "attr_WS", type_ "text", value <| String.fromInt sval] [ ]
+      [ input [ disabled True, id "attr_WS", type_ "text", value <| String.fromInt (sBase + 5*sVal)] [ ]
       ]
     ]
   , div [ class "w3-rest" ]
-    [ button [ style "height" "33px", style "width" "100%", onClick <| StatUp weaponSkill ] [ text "+" ]
-    , button [ style "height" "33px", style "width" "100%", onClick <| StatDown weaponSkill ] [ text "-" ]
+    [ button [ style "height" "33px", style "width" "100%"
+             , onClick <| StatUp lens
+             , disabled <| sVal == 5 || (withDefault True <| Maybe.map ((<) model.freeExp) upCost)  ] [ text "+" ]
+    , button [ style "height" "33px", style "width" "100%", onClick <| StatDown lens, disabled (sVal == 0) ] [ text "-" ]
     ]
   ]
 
@@ -234,10 +296,6 @@ skillSelect =
   in select [ selectHandler skillSelectAction ] <|
       [ option [style "text-align" "center"] [ text "Learn new skill" ]
       ] ++ List.map (opt) (Array.toIndexedList skillArray)
-
-subscriptions: Model -> Sub Msg
-subscriptions _ = Sub.none
-
 
 view: Model -> Html Msg
 view model =
@@ -310,139 +368,19 @@ view model =
                   , div [ class "w3-row-padding"]
                     [ -- Left Column (Characteristics) --
                       div [ class "w3-half"]
-                      [ -- WeaponSkill (WS) --
-                        -- div [ class "w3-row-padding"]
-                        -- [ div [ class "w3-half"]
-                        --   [ div [ name "roll_WS", type_ "roll", style "text-align" "center;"
-                        --         , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
-                        --         ] [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"] [text "Weapon Skill (WS)"] ]
-                        --   ]
-                        -- , div [ class "w3-half"] [
-                        --     div [ class "sheet-unnatural_box"] [ input [ disabled True, id "attr_WS", type_ "text", value "0"] [ ] ]
-                        --   ]
-                        -- ]
-                        statBox (Stats.WS, model.weaponSkill)
-                        -- BallisticSkill (BS) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_BS", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Ballistic Skill: [[1d100]] Target: [[@{BallisticSkill}+ ?{Modifier|0}]]."
-                                ] [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"] [text "Ballistic Skill (BS)"] ]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_BS", type_ "text", value "0"] [ ]
-                            ]
-                          ]
-                        ]
-
-                        -- Strength (S) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_S", type_ "roll", style "text-align" "center;", value "/em rolls Strength: [[1d100]] Target: [[@{Strength}+ ?{Modifier|0}]]."
-                                ] [ label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Strength (S)"]
-                                  ]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_S", type_ "text", value "0"] [
-
-                              ]
-                            ]
-                          ]
-                        ]
-
-                        -- Toughness (T) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_T", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Toughness: [[1d100]] Target: [[@{Toughness}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Toughness (T)"]]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_T", type_ "text", value "0"] [
-
-                              ]
-                            ]
-                          ]
-                        ]
-
-                        -- Agility (Ag) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_Ag", type_ "roll", style "text-align" "center;", value "/em rolls Agility: [[1d100]] Target: [[@{Agility}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Agility (Ag)"]]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_Ag", type_ "text", value "0"] [
-
-                              ]
-                            ]
-                          ]
-                        ]
+                      [ statBox Stats.WS model weaponSkill -- WeaponSkill (WS) --
+                      , statBox Stats.BS model ballisticSkill -- BallisticSkill (BS) --
+                      , statBox Stats.BS model strength -- Strength (S) --
+                      , statBox Stats.BS model toughness -- Toughness (T) --
+                      , statBox Stats.BS model agility -- Agility (Ag) --
                       ]
 
                     -- Characteristics (Right Column) --
                     , div [ class "w3-half"]
-                      [ div [ class "w3-row-padding"] -- Intelligence (Int) --
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_Int", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Intelligence: [[1d100]] Target: [[@{Intelligence}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Intelligence (Int)"]]
-                          ]
-                        , div [ class "w3-half"]
-                          [ div [ class "sheet-unnatural_box"] [ input [ disabled True, id "attr_Int", type_ "text", value "0"] [ ] ]
-                          ]
-                        ]
-                      , div [ class "w3-row-padding"] -- Perception (Per) --
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_Per", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Perception: [[1d100]] Target: [[@{Perception}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Perception (Per)"]]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_Per", type_ "text", value "0"] [
-
-                              ]
-                            ]
-                          ]
-                        ]
-
-
-                        -- Willpower (WP) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_WP", type_ "roll", style "text-align" "center;"
-                                , value "/em rolls Willpower: [[1d100]] Target: [[@{Willpower}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Willpower (WP)"]]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_WP", type_ "text", value "0"] []
-
-                            ]
-                          ]
-                        ]
-
-
-                        -- Fellowship (Fel) --
-                      , div [ class "w3-row-padding"]
-                        [ div [ class "w3-half"] [
-                            div [ name "roll_Fel", type_ "roll", style "text-align" "center;",
-                                 value "/em rolls Fellowship: [[1d100]] Target: [[@{Fellowship}+ ?{Modifier|0}]]."] [
-                              label [ style "font-size" "1.25em", style "vertical-align" "middle"] [text "Fellowship (Fel)"]]
-                          ]
-                        , div [ class "w3-half"] [
-                            div [ class "sheet-unnatural_box"] [
-                              input [ disabled True, id "attr_Fel", type_ "text", value "0"] []
-
-                            ]
-                          ]
-                        ]
-
+                      [ statBox Stats.BS model intelligence -- Intelligence (Int) --
+                      , statBox Stats.BS model perception -- Perception (Per) --
+                      , statBox Stats.BS model willpower -- Willpower (WP) --
+                      , statBox Stats.BS model fellowship -- Fellowship (Fel) --
 
                         -- Influence (Ifl) --
                       , div [ class "w3-row-padding"]

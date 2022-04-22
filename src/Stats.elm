@@ -1,5 +1,6 @@
 module Stats exposing (..)
 
+import Array
 import Util
 type StatName = WS
           | BS
@@ -56,7 +57,7 @@ fullName s =
     Fell -> "Fellowship"
     Infl -> "Influence"
 
-type alias Stat = (StatName, Int)
+type alias Stat = (StatName, (Int, List Aptitude))
 
 aptMap: StatName -> List Aptitude
 aptMap stat =
@@ -75,3 +76,13 @@ aptMap stat =
 aptsCounter: List Aptitude -> List Aptitude -> Int
 aptsCounter charApts =
   List.foldl (\el acc -> if Util.contains charApts el then acc + 1 else acc) 0
+
+statProgression =
+  Array.fromList <| List.map Array.fromList
+    [ [500, 750, 1000, 1500, 2500]
+    , [250, 500, 750, 1000, 1500]
+    , [100, 250, 500, 750, 1250]
+    ]
+
+getCost aptsCnt lvl =
+  Array.get aptsCnt statProgression |> Maybe.andThen (Array.get lvl)
