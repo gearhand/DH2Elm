@@ -2,12 +2,12 @@ module Charsheet exposing (..)
 import Array exposing (Array)
 import Browser
 import Dict exposing (Dict)
-import Html exposing (Attribute, Html, a, br, button, div, h3, h4, hr, img, input, label, option, p, section, select, span, table, td, text, tr)
+import Html exposing (Attribute, Html, a, br, button, div, h3, hr, img, input, label, option, p, s, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
 import Html.Events.Extra exposing (targetValueInt)
 import Maybe exposing (andThen, withDefault)
-import Skills exposing (Skill, skillArray)
+import Skills exposing (Skill)
 import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens)
 import Json.Decode as Json
@@ -279,9 +279,9 @@ tempView skill =
     ]
   ]
 
-skillSelectAction: Int -> Msg
-skillSelectAction idx =
-  case Skills.get (idx - 1) of
+skillSelectAction: Array Skill -> Int -> Msg
+skillSelectAction skills idx =
+  case Array.get (idx - 1) skills of
     Just skill -> if Array.isEmpty skill.specs
                     then AddSpec skill.name skill
                     else AddTemp skill
@@ -291,12 +291,13 @@ selectHandler: (Int -> Msg) -> Attribute Msg
 selectHandler action =
   on "change" <| Json.map action <| Json.at ["target", "selectedIndex"] Json.int
 
-skillSelect: Html Msg
-skillSelect =
+skillSelect: Dict String (Skill, Int) -> Html Msg
+skillSelect skills =
   let opt (idx, skill) = option [style "text-align" "center", value (String.fromInt idx)] [ text <| .name skill ]
-  in select [ selectHandler skillSelectAction ] <|
+      filtered = Skills.filtered skills
+  in select [ selectHandler <| skillSelectAction filtered ] <|
       [ option [style "text-align" "center"] [ text "Learn new skill" ]
-      ] ++ List.map (opt) (Array.toIndexedList skillArray)
+      ] ++ List.map (opt) (Array.toIndexedList filtered)
 
 freeExpView model =
   input [ style "text-align" "center", style "width" "100px", style "margin-left" "5px"
@@ -475,7 +476,7 @@ view model =
                 ] ++ List.map (skillView model) (Dict.toList model.skills) ++
                 (case model.temp of
                   Just tSkill -> [tempView tSkill]
-                  Nothing -> [skillSelect]
+                  Nothing -> [skillSelect model.skills]
                 ) ++
                 --[skillSelect] ++
                 --[skillDropdown model] ++

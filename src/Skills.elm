@@ -1,6 +1,7 @@
-module Skills exposing (..)
+module Skills exposing (Skill, filtered, logic, acrobatics, getCost)
 
 import Array exposing (Array)
+import Dict exposing (Dict)
 import Stats exposing (Aptitude(..), StatName(..))
 
 type alias Skill = { name: String
@@ -122,25 +123,25 @@ security = Skill "Security" "Безопасность" [StatApt Int, Tech] Array
 survival = Skill "Survival" "Выживание" [StatApt Per, Fieldcraft] Array.empty
 inquiry = Skill "Inquiry" "Дознание | Сбор сведений" [StatApt Fell, Social] Array.empty
 interrogation = Skill "Interrogation" "Допрос" [StatApt Will, Social] Array.empty
-forbiddenLore = Skill "Forbidden Lore" "Запретные знания" [StatApt Int, Knowledge] forbiddenLoreSpecs
 intimidate = Skill "Intimidate" "Запугивание" [StatApt Str, Social] Array.empty
 command = Skill "Command" "Командование" [StatApt Fell, Leadership] Array.empty
 commerce = Skill "Commerce" "Коммерция" [StatApt Int, Knowledge] Array.empty
-linguistics = Skill "Linguistics" "Лингвистика" [StatApt Int, General] linguisticsSpecs
 sleightOfHand = Skill "Sleight of Hand" "Ловкость рук" [StatApt Ag, Knowledge] Array.empty
 logic = Skill "Logic" "Логика" [StatApt Int, Knowledge] Array.empty
 medicae = Skill "Medicae" "Медицина" [StatApt Int, Fieldcraft] Array.empty
-navigate = Skill "Navigate" "Навигация" [StatApt Int, Fieldcraft] navigationSpecs
 deceive = Skill "Deceive" "Обман" [StatApt Fell, Social] Array.empty
 charm = Skill "Charm" "Обаяние" [StatApt Fell, Social] Array.empty
-commonLore = Skill "Common Lore" "Общие знания | Обыденные знания" [StatApt Int, General] commonLoreSpecs
 parry = Skill "Parry" "Парирование" [StatApt WS, Defence] Array.empty
 scrutiny = Skill "Scrutiny" "Проницательность | Внимание к деталям" [StatApt Per, General] Array.empty
 psyniscience = Skill "Psyniscience" "Псинистика | Пси-наука | Психонаука" [StatApt Per, Psyker] Array.empty
-trade = Skill "Trade" "Ремесло" [StatApt Int, General] tradeSpecs
 stealth = Skill "Stealth" "Скрытность" [StatApt Ag, Fieldcraft] Array.empty
 techUse = Skill "Tech-Use" "Техпользование" [StatApt Int, Tech] Array.empty
 dodge = Skill "Dodge" "Уклонение" [StatApt Ag, Defence] Array.empty
+forbiddenLore = Skill "Forbidden Lore" "Запретные знания" [StatApt Int, Knowledge] forbiddenLoreSpecs
+linguistics = Skill "Linguistics" "Лингвистика" [StatApt Int, General] linguisticsSpecs
+navigate = Skill "Navigate" "Навигация" [StatApt Int, Fieldcraft] navigationSpecs
+commonLore = Skill "Common Lore" "Общие знания | Обыденные знания" [StatApt Int, General] commonLoreSpecs
+trade = Skill "Trade" "Ремесло" [StatApt Int, General] tradeSpecs
 operate = Skill "Operate" "Управление" [StatApt Ag, Fieldcraft] operateSpecs
 scholasticLore = Skill "Scholastic Lore" "Учёные знания" [StatApt Int, Knowledge] scholarLoreSpecs
 
@@ -153,30 +154,37 @@ skillArray =
   , survival
   , inquiry
   , interrogation
-  , forbiddenLore
   , intimidate
   , command
   , commerce
-  , linguistics
   , sleightOfHand
   , logic
   , medicae
-  , navigate
   , deceive
   , charm
-  , commonLore
   , parry
   , scrutiny
   , psyniscience
-  , trade
   , stealth
   , techUse
   , dodge
+  ]
+
+specSkillArray =
+  Array.fromList
+  [ forbiddenLore
+  , linguistics
+  , navigate
+  , commonLore
+  , trade
   , operate
   , scholasticLore
   ]
 
-get idx = Array.get idx skillArray
+filtered: Dict String (Skill, Int) -> Array Skill
+filtered skills = Array.append (Array.filter (\s -> not <| Dict.member s.name skills) skillArray) specSkillArray
+
+get idx = Array.get idx <| Array.append skillArray specSkillArray
 
 skillProgression: Array (Array Int)
 skillProgression =
