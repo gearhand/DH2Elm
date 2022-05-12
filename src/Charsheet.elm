@@ -11,6 +11,7 @@ import Skills exposing (Skill)
 import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens)
 import Json.Decode as Json
+import Talents
 import Util exposing (applyM)
 
 main = Browser.element
@@ -34,6 +35,7 @@ type Msg = StatUp ModelLens
          | UpdateExp Int
          | Add -- Talent
          | Remove -- Talent
+         | TalentSelect Talents.Msg
          | Placeholder String
          | Empty
 
@@ -54,6 +56,7 @@ type alias Model =
   , skills: Dict String (Skill, Int)
   , temp: Maybe Skill
   , drop: String
+  , talentSelector: Talents.Model
   }
 
 type alias SkillView = (String, Int)
@@ -116,6 +119,7 @@ init _ =
     , skills = Dict.fromList <| List.map (\v -> (v.name, (v, 0))) [ Skills.logic , Skills.acrobatics ]
     , temp = Nothing
     , drop = "none"
+    , talentSelector = Talents.init
     }
   , Cmd.none)
 
@@ -203,6 +207,7 @@ update msg model =
     AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
     AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
     UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
+    TalentSelect selectMsg -> let (newSelect, newCmd) = Talents.update selectMsg model.talentSelector in ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
     _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
@@ -213,10 +218,7 @@ statBox sName model lens =
   in
   div [ class "w3-row-padding"]
   [ div [ class "w3-half"]
-    [ div
-      [ name "roll_WS", type_ "roll", style "text-align" "center;"
-      , value "/em rolls Weapon Skill: [[1d100]] Target: [[@{WeaponSkill}+ ?{Modifier|0}]]."
-      ]
+    [ div []
       [ label [ style "font-size" "1.25em", style "vertical-align" "middle;"]
         [text <| Stats.fullName sName]
       ]
@@ -379,17 +381,17 @@ view model =
                       div [ class "w3-half"]
                       [ statBox Stats.WS model weaponSkill -- WeaponSkill (WS) --
                       , statBox Stats.BS model ballisticSkill -- BallisticSkill (BS) --
-                      , statBox Stats.BS model strength -- Strength (S) --
-                      , statBox Stats.BS model toughness -- Toughness (T) --
-                      , statBox Stats.BS model agility -- Agility (Ag) --
+                      , statBox Stats.Str model strength -- Strength (S) --
+                      , statBox Stats.Tou model toughness -- Toughness (T) --
+                      , statBox Stats.Ag model agility -- Agility (Ag) --
                       ]
 
                     -- Characteristics (Right Column) --
                     , div [ class "w3-half"]
-                      [ statBox Stats.BS model intelligence -- Intelligence (Int) --
-                      , statBox Stats.BS model perception -- Perception (Per) --
-                      , statBox Stats.BS model willpower -- Willpower (WP) --
-                      , statBox Stats.BS model fellowship -- Fellowship (Fel) --
+                      [ statBox Stats.Int model intelligence -- Intelligence (Int) --
+                      , statBox Stats.Per model perception -- Perception (Per) --
+                      , statBox Stats.Will model willpower -- Willpower (WP) --
+                      , statBox Stats.Fell model fellowship -- Fellowship (Fel) --
 
                         -- Influence (Ifl) --
                       , div [ class "w3-row-padding"]
@@ -488,7 +490,11 @@ view model =
                       span [ class "talentDetail"] []
                     ]
                   ]
-
+                , div [ class "w3-row", id "talent0" ]
+                  [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
+                    [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
+                  ]
+                , Talents.view model.talentSelector |> Html.map TalentSelect
                 , br [] []-- Break between Talents and Aptitudes
                 , hr [ class "sheet-dhhr"] []
                 , h3 [] [text "Aptitudes"]
