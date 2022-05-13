@@ -7,6 +7,7 @@ import Html.Attributes exposing (class, disabled, href, id, name, src, style, ta
 import Html.Events exposing (on, onClick)
 import Html.Events.Extra exposing (targetValueInt)
 import Maybe exposing (andThen, withDefault)
+import Model exposing (Model, skillAdd, skillDown, skillRm, skillUp)
 import Skills exposing (Skill)
 import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens)
@@ -36,28 +37,10 @@ type Msg = StatUp ModelLens
          | Add -- Talent
          | Remove -- Talent
          | TalentSelect Talents.Msg
+         | TalentSubmit
          | Placeholder String
          | Empty
 
-type alias Model =
-  { weaponSkill: (Int, Int, List Aptitude)
-  , ballisticSkill: (Int, Int, List Aptitude)
-  , strength: (Int, Int, List Aptitude)
-  , toughness: (Int, Int, List Aptitude)
-  , agility: (Int, Int, List Aptitude)
-  , intelligence: (Int, Int, List Aptitude)
-  , perception: (Int, Int, List Aptitude)
-  , willpower: (Int, Int, List Aptitude)
-  , fellowship: (Int, Int, List Aptitude)
-  , influence: Int
-  , freeExp: Int
-  , spentExp: Int
-  , aptitudes: List Aptitude
-  , skills: Dict String (Skill, Int)
-  , temp: Maybe Skill
-  , drop: String
-  , talentSelector: Talents.Model
-  }
 
 type alias SkillView = (String, Int)
 viewSkill (skill, spec) =
@@ -120,72 +103,16 @@ init _ =
     , temp = Nothing
     , drop = "none"
     , talentSelector = Talents.init
+    , talents = [ "Weapon Training (Laz)" ]
     }
   , Cmd.none)
-
---foo: {a | weaponSkill: b} -> b
---foo = .weaponSkill
-
-getSkillUpCost: List Aptitude -> (Skill, Int) -> Maybe Int
-getSkillUpCost charApts (skill, lvl) =
-  Skills.getCost (Stats.aptsCounter charApts skill.aptitudes, lvl + 10)
-
-getSkillDownCost: List Aptitude -> (Skill, Int) -> Maybe Int
-getSkillDownCost charApts (skill, lvl) =
-  Skills.getCost (Stats.aptsCounter charApts skill.aptitudes, lvl)
-
-payCost: Int -> Model -> Model
-payCost cost model =
-  { model | spentExp = model.spentExp + cost, freeExp = model.freeExp - cost }
-
-refund: Int -> Model -> Model
-refund cost model =
-  { model | spentExp = model.spentExp - cost, freeExp = model.freeExp + cost }
-
-skillUp: Model -> String -> Model
-skillUp model sName =
-  let skill = Dict.get sName model.skills
-      cost  = andThen <| getSkillUpCost model.aptitudes
-      sAdj (s,lvl) m = { m | skills = Dict.insert sName (s, lvl + 10) m.skills }
-      pay = Maybe.map payCost <| cost skill
-      adj = Maybe.map sAdj skill
-  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
-
-skillDown: Model -> String -> Model
-skillDown model sName =
-  let skill = Dict.get sName model.skills
-      cost  = andThen <| getSkillDownCost model.aptitudes
-      sAdj (s,lvl) m = { m | skills = Dict.insert sName (s, lvl - 10) m.skills }
-      pay = Maybe.map refund <| cost skill
-      adj = Maybe.map sAdj skill
-  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
-
-skillAdd: Model -> String -> Skill -> Model
-skillAdd model sName skill =
-  let skill_ = Dict.get sName model.skills
-      cost  = getSkillDownCost model.aptitudes (skill, 0) -- We need current lvl cost, so it's downCost function
-      sAdj s m = { m | skills = Dict.insert sName (s, 0) m.skills, temp = Nothing }
-      pay = Maybe.map payCost cost
-      adj = Just (sAdj skill)
-  in case skill_ of
-    Just _ -> model
-    Nothing -> applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
-
-skillRm: Model -> String -> Model
-skillRm model sName =
-  let skill = Dict.get sName model.skills
-      cost  = andThen <| getSkillDownCost model.aptitudes
-      sAdj m = { m | skills = Dict.remove sName m.skills }
-      pay = Maybe.map refund <| cost skill
-      adj = Just sAdj
-  in applyM pay (Just model) |> applyM adj |> Maybe.withDefault model
 
 statUp: Model -> ModelLens -> Model
 statUp model lens =
   let (val, _, apts) = FieldLens.get lens model
       aCnt = Stats.aptsCounter model.aptitudes apts
       cost = Stats.getCost aCnt val
-      pay = Maybe.map payCost cost
+      pay = Maybe.map Model.payCost cost
   in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val+1)) |> Maybe.withDefault model
 
 statDown: Model -> ModelLens -> Model
@@ -193,7 +120,7 @@ statDown model lens =
   let (val, _, apts) = FieldLens.get lens model
       aCnt = Stats.aptsCounter model.aptitudes apts
       cost = Stats.getCost aCnt (val - 1)
-      pay = Maybe.map refund cost
+      pay = Maybe.map Model.refund cost
   in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val - 1)) |> Maybe.withDefault model
 
 update: Msg -> Model -> (Model, Cmd Msg)
@@ -207,7 +134,22 @@ update msg model =
     AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
     AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
     UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
-    TalentSelect selectMsg -> let (newSelect, newCmd) = Talents.update selectMsg model.talentSelector in ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
+    --TalentSelect selectMsg ->
+    --  let (newSelect, newCmd) = Talents.update selectMsg model.talentSelector
+    --   in ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
+    TalentSelect selectMsg ->
+      let (newSelect, newCmd) = Talents.update (Debug.log "Event: " selectMsg) model.talentSelector
+       in case selectMsg of
+            Talents.SelectTree (Just talent) -> ({model | talentSelector = newSelect, talents = talent.name :: model.talents}, Cmd.map TalentSelect newCmd)
+            _ -> ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
+    TalentSubmit ->
+      ( { model | talents =
+            case model.talentSelector.selection of
+              Just talent -> talent.name :: model.talents
+              Nothing -> model.talents
+        }
+      , Cmd.none
+      )
     _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
@@ -255,7 +197,7 @@ skillView model (name, (skill, lvl)) =
     [ span [ class "skillDetail"] [ text <| name ++ " +" ++ String.fromInt lvl ]
     , button [ style "height" "100%", style "float" "right"
              , onClick <| SkillUp name
-             , disabled (lvl >= 30 || Maybe.withDefault 100000 (getSkillUpCost model.aptitudes (skill, lvl)) > model.freeExp)
+             , disabled (lvl >= 30 || Maybe.withDefault 100000 (Skills.getUpCost model.aptitudes (skill, lvl)) > model.freeExp)
              ] [ text "+" ]
     , if lvl > 0
         then button [ style "height" "100%", style "float" "right"
@@ -427,38 +369,31 @@ view model =
                         ]
                     ]
                   ]
-                , div [ class "w3-row-padding"]
-                  [ div [ class "w3-half"]
-                    [ h3 [] [text "Wounds"]
-                    , div [ class "w3-row"] [
-                        div [ class "w3-center"] [
-                          h3 [ id "attr_Wounds_max", type_ "number", style "text-align" "center"] []
-                        ]
-                      ]
-                    ]
-                  , div [ class "w3-half"]
-                    [ h3 [] [text "Fate Point Threshold"]
-                    , div [ class "w3-row"] [
-                        div [ class "w3-center"] [
-                          h3 [ id "attr_Fate_max", type_ "number", style "text-align" "center"] []
-                        ]
-                      ]
-                    ]
+                , let template_ name_ id_ = div [ class "w3-half"]
+                                              [ h3 [] [text name_]
+                                              , div [ class "w3-row"] [
+                                                  div [ class "w3-center"] [
+                                                    h3 [ id id_, type_ "number", style "text-align" "center"] []
+                                                  ]
+                                                ]
+                                              ]
+                  in div [ class "w3-row-padding"]
+                  [ template_ "Wounds" "attr_Wounds_max"
+                  , template_ "Fate Point Threshold" "attr_Fate_max"
                   ]
                 , br [] []
                 , div [ class "w3-row-padding"]
                   [ div [ class "w3-half"]
                     [ h3 [] [text "Movement"]
-                    , div [ class ""]
+                    , let movement_ text_ id_ = div [ class "w3-half"] [label [] [text text_], span [ style "vertical-align" "middle", id id_] [] ]
+                      in div [ class "w3-row"]
                       [ div [ class "w3-row"]
-                        [ div [ class "w3-half"] [label [] [text "Half Move: "], span [ style "vertical-align" "middle", id "halfMove"] []]
-                        , div [ class "w3-half"] [label [] [text "Full Move: "], span [ style "vertical-align" "middle", id "fullMove"] []]
+                        [ movement_ "Half Move: " "halfMove"
+                        , movement_ "Full Move: " "fullMove"
                         ]
                       , div [ class "w3-row"]
-                        [ div [ class "w3-row"]
-                          [ div [ class "w3-half"] [label [] [text "Charge: "], span [ style "vertical-align" "middle", id "charge"] []]
-                          , div [ class "w3-half"] [label [] [text "Run: "],    span [ style "vertical-align" "middle", id "run"] []]
-                          ]
+                        [ movement_ "Charge: " "charge"
+                        , movement_ "Run: " "run"
                         ]
                       ]
                     ]
@@ -494,44 +429,20 @@ view model =
                   [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
                     [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
                   ]
-                , Talents.view model.talentSelector |> Html.map TalentSelect
+                ] ++ let template_ talent_ = div [ class "w3-row", id "talent0" ]
+                                           [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
+                                             [ span [ class "talentDetail" ] [ text talent_.name ]]
+                                           ]
+                      in List.map template_ model.talentSelector.talentList
+                ++
+                [ div [ class "w3-row", id "addTalent" ]
+                  [ Talents.view model.talentSelector |> Html.map TalentSelect
+                  --, button []
+                  ]
                 , br [] []-- Break between Talents and Aptitudes
                 , hr [ class "sheet-dhhr"] []
                 , h3 [] [text "Aptitudes"]
-                , div [ class "w3-row", id "aptitudeContainer"] (aptitudesView model.aptitudes)
-                  --[ div [ class "w3-row"]
-                  --  [ div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude0"] []
-                  --    ]
-                  --  , div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude1"] []
-                  --    ]
-                  --  ]
-                  --, div [ class "w3-row"]
-                  --  [ div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude2"] []
-                  --    ]
-                  --  , div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude3"] []
-                  --    ]
-                  --  ]
-                  --, div [ class "w3-row"]
-                  --  [ div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude4"] []
-                  --    ]
-                  --  , div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude5"] []
-                  --    ]
-                  --  ]
-                  --, div [ class "w3-row"]
-                  --  [ div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline",  id "aptitude6"] []
-                  --    ]
-                  --  , div [ class "w3-half"] [
-                  --      span [ class "sheet-item w3-center underline", id "aptitude7"] []
-                  --    ]
-                  --  ]
-                  --]
+                , div [ class "w3-row", id "aptitudeContainer"] <| aptitudesView model.aptitudes
                 ]
 
               ]

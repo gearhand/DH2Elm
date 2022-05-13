@@ -1,4 +1,4 @@
-module Skills exposing (Skill, filtered, logic, acrobatics, getCost)
+module Skills exposing (Skill, filtered, logic, acrobatics, getUpCost, getDownCost)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
@@ -184,8 +184,6 @@ specSkillArray =
 filtered: Dict String (Skill, Int) -> Array Skill
 filtered skills = Array.append (Array.filter (\s -> not <| Dict.member s.name skills) skillArray) specSkillArray
 
-get idx = Array.get idx <| Array.append skillArray specSkillArray
-
 skillProgression: Array (Array Int)
 skillProgression =
   Array.fromList <| List.map Array.fromList
@@ -198,7 +196,13 @@ getCost: (Int, Int) -> Maybe Int
 getCost (apts, lvl) =
   Array.get apts skillProgression |> Maybe.andThen (Array.get (lvl // 10))
 
+getUpCost: List Aptitude -> (Skill, Int) -> Maybe Int
+getUpCost charApts (skill, lvl) =
+  getCost (Stats.aptsCounter charApts skill.aptitudes, lvl + 10)
 
+getDownCost: List Aptitude -> (Skill, Int) -> Maybe Int
+getDownCost charApts (skill, lvl) =
+  getCost (Stats.aptsCounter charApts skill.aptitudes, lvl)
 
 
 

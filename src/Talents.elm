@@ -8,6 +8,7 @@ import Html.Events exposing (on, targetValue)
 import Json.Decode as Json
 import Selectize
 import Stats exposing (Aptitude(..), StatName(..))
+import Util exposing (applyM)
 
 type alias Talent = { name: String
                     , prerequisites: String
@@ -25,35 +26,20 @@ main = Browser.element
   , subscriptions = \_ -> Sub.none
   }
 
-init1: () -> (Model, Cmd Msg)
+init1: () -> (Selector, Cmd Msg)
 init1 _ = (init, Cmd.none)
---view =
---  div [ class "w3-row", id "talent0" ]
---  [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
---    [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
---  ]
 
-addView action =
-  div [ class "w3-row", id "addTalent" ]
-  [ input [ list "addTalentList"
-          , on "change" <| Json.map action <| targetValue
-          ] []
-  , datalist [ id "addTalentList" ]
-    [ option [ value "Weapon Training (Las)"] [ text "Выучка с оружием (Лаз)" ]
-    , option [ value "Weapon Training (Stub)"] [ text "Выучка с оружием (Стаб)" ]
-    ]
-  ]
-
-type alias Model =
+type alias Selector =
   { selection : Maybe Talent
   , menu : Selectize.State Talent
+  , talentList: List Talent
   }
 
 type Msg
     = MenuMsg (Selectize.Msg Talent)
     | SelectTree (Maybe Talent)
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Selector -> ( Selector, Cmd Msg )
 update msg model =
     case Debug.log "Update: " msg of
         MenuMsg selectizeMsg ->
@@ -79,7 +65,13 @@ update msg model =
                     ( newModel, cmd )
 
         SelectTree newSelection ->
-            ( { model | selection = newSelection }, Cmd.none )
+            ( { model | selection = newSelection
+              , talentList =
+                  case newSelection of
+                    Just talent_ -> talent_ :: model.talentList
+                    _ -> model.talentList
+              }
+            , Cmd.none )
 
 andDo : Cmd msg -> ( model, Cmd msg ) -> ( model, Cmd msg )
 andDo cmd ( model, cmds ) =
@@ -87,20 +79,19 @@ andDo cmd ( model, cmds ) =
     , Cmd.batch [ cmd, cmds ]
     )
 
-init: Model
+init: Selector
 init =
   { selection = Nothing
   , menu = Selectize.closed "talentSelector" .name <| List.map Selectize.entry talentList
+  , talentList = []
   }
 
-view : Model -> Html Msg
+view : Selector -> Html Msg
 view model =
-  div [ class "w3-row", id "addTalent" ]
-    [ Selectize.view config
-        model.selection
-        model.menu
-        |> Html.map MenuMsg
-    ]
+  Selectize.view config
+    model.selection
+    model.menu
+    |> Html.map MenuMsg
 
 config =
   { container = []
