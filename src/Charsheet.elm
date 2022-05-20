@@ -1,19 +1,21 @@
 module Charsheet exposing (..)
 import Array exposing (Array)
 import Browser
+import Controller exposing (Msg(..))
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, hr, img, input, label, option, p, s, section, select, span, table, td, text, tr)
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
 import Html.Events.Extra exposing (targetValueInt)
 import Maybe exposing (andThen, withDefault)
-import Model exposing (Model, skillAdd, skillDown, skillRm, skillUp)
+import Model exposing (Model, ModelLens, agility, ballisticSkill, fellowship, intelligence, perception, skillAdd, skillDown, skillRm, skillUp, strength, toughness, weaponSkill, willpower)
+import Set
 import Skills exposing (Skill)
-import Stats exposing (Aptitude(..), Stat, StatName(..), aptMap, aptToString)
+import Stats exposing (Aptitude(..), StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens)
 import Json.Decode as Json
 import Talents
-import Util exposing (applyM)
+import Util exposing (SelectorMsg(..), applyM)
 
 main = Browser.element
   { init = init
@@ -26,20 +28,6 @@ subscriptions: Model -> Sub Msg
 subscriptions _ = Sub.none
 
 
-type Msg = StatUp ModelLens
-         | StatDown ModelLens
-         | RmSkill String
-         | AddTemp Skill
-         | AddSpec String Skill
-         | SkillUp String
-         | SkillDown String
-         | UpdateExp Int
-         | Add -- Talent
-         | Remove -- Talent
-         | TalentSelect Talents.Msg
-         | TalentSubmit
-         | Placeholder String
-         | Empty
 
 
 type alias SkillView = (String, Int)
@@ -48,33 +36,6 @@ viewSkill (skill, spec) =
     "" -> skill.name
     _  -> skill.name ++ " (" ++ spec ++ ")"
 
-type alias ModelLens = FieldLens Model (Int, Int, List Aptitude) Int Model
-weaponSkill : ModelLens
-weaponSkill = FieldLens .weaponSkill (\v r -> let (_, base, apts) = r.weaponSkill in { r | weaponSkill = (v, base, apts) })
-
-ballisticSkill : ModelLens
-ballisticSkill = FieldLens .ballisticSkill (\v r -> let (_, base, apts) = r.ballisticSkill in { r | ballisticSkill = (v, base, apts) })
-
-strength : ModelLens
-strength = FieldLens .strength (\v r -> let (_, base, apts) = r.strength in { r | strength = (v, base, apts) })
-
-toughness : ModelLens
-toughness = FieldLens .toughness (\v r -> let (_, base, apts) = r.toughness in { r | toughness = (v, base, apts) })
-
-agility : ModelLens
-agility = FieldLens .agility (\v r -> let (_, base, apts) = r.agility in { r | agility = (v, base, apts) })
-
-intelligence : ModelLens
-intelligence = FieldLens .intelligence (\v r -> let (_, base, apts) = r.intelligence in { r | intelligence = (v, base, apts) })
-
-perception : ModelLens
-perception = FieldLens .perception (\v r -> let (_, base, apts) = r.perception in { r | perception = (v, base, apts) })
-
-willpower : ModelLens
-willpower = FieldLens .willpower (\v r -> let (_, base, apts) = r.willpower in { r | willpower = (v, base, apts) })
-
-fellowship : ModelLens
-fellowship = FieldLens .fellowship (\v r -> let (_, base, apts) = r.fellowship in { r | fellowship = (v, base, apts) })
 
 init: () -> (Model, Cmd Msg)
 init _ =
@@ -103,7 +64,12 @@ init _ =
     , temp = Nothing
     , drop = "none"
     , talentSelector = Talents.init
-    , talents = [ "Weapon Training (Laz)" ]
+    , talents = Dict.empty
+    , traits = Set.empty
+    , implants = Set.empty
+    , psyRating = 0
+    , madness = 0
+    , corruption = 0
     }
   , Cmd.none)
 
@@ -134,22 +100,9 @@ update msg model =
     AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
     AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
     UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
-    --TalentSelect selectMsg ->
-    --  let (newSelect, newCmd) = Talents.update selectMsg model.talentSelector
-    --   in ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
     TalentSelect selectMsg ->
-      let (newSelect, newCmd) = Talents.update (Debug.log "Event: " selectMsg) model.talentSelector
-       in case selectMsg of
-            Talents.SelectTree (Just talent) -> ({model | talentSelector = newSelect, talents = talent.name :: model.talents}, Cmd.map TalentSelect newCmd)
-            _ -> ({model | talentSelector = newSelect}, Cmd.map TalentSelect newCmd)
-    TalentSubmit ->
-      ( { model | talents =
-            case model.talentSelector.selection of
-              Just talent -> talent.name :: model.talents
-              Nothing -> model.talents
-        }
-      , Cmd.none
-      )
+      let (newModel, newCmd) = Model.talentUpdate (\s m -> { m | talents = Dict.insert s.name s m.talents}) selectMsg model
+       in (newModel, Cmd.map TalentSelect newCmd)
     _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
@@ -433,10 +386,10 @@ view model =
                                            [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
                                              [ span [ class "talentDetail" ] [ text talent_.name ]]
                                            ]
-                      in List.map template_ model.talentSelector.talentList
+                      in List.map template_ (Dict.values model.talents)
                 ++
                 [ div [ class "w3-row", id "addTalent" ]
-                  [ Talents.view model.talentSelector |> Html.map TalentSelect
+                  [ Talents.view model.talentSelector |> Html.map (TalentSelect << MenuMsg)
                   --, button []
                   ]
                 , br [] []-- Break between Talents and Aptitudes

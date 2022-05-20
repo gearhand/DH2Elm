@@ -79,6 +79,7 @@ tradeSpecs =
   Array.fromList
   [ "Agronomics"
   , "Archeology"
+  , "Armourer"
   , "Weaponsmithing"
   , "Astrography"
   , "Chemistry"

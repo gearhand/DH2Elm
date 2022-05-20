@@ -57,8 +57,6 @@ fullName s =
     Fell -> "Fellowship"
     Infl -> "Influence"
 
-type alias Stat = (StatName, (Int, List Aptitude))
-
 aptMap: StatName -> List Aptitude
 aptMap stat =
   StatApt stat :: case stat of
@@ -86,3 +84,6 @@ statProgression =
 
 getCost aptsCnt lvl =
   Array.get aptsCnt statProgression |> Maybe.andThen (Array.get lvl)
+
+value: (Int, Int, List Aptitude) -> Int
+value (level, base, _) = base + 5*level
