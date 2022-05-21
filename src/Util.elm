@@ -30,3 +30,37 @@ menuLens = FieldLens .menu (\val rec -> { rec | menu = val })
 
 selectionLens: FieldLens (Selector s) (Maybe s) (Maybe s) (Selector s)
 selectionLens = FieldLens .selection (\val rec -> { rec | selection = val })
+
+selectorUpdate : SelectorLens m s -> (s -> m -> m) -> SelectorMsg s -> m -> ( m, Cmd (SelectorMsg s))
+selectorUpdate lens updater msg model =
+    case msg of
+        MenuMsg selectizeMsg ->
+            let
+                ( newMenu, menuCmd, maybeMsg ) =
+                    Selectize.update SelectTree
+                        (lens.get model).selection
+                        (lens.get model).menu
+                        selectizeMsg
+
+                newModel =
+                  (FieldLens.compose lens menuLens).set newMenu model
+
+                cmd =
+                    menuCmd |> Cmd.map MenuMsg
+            in
+            case maybeMsg of
+                Just nextMsg ->
+                    selectorUpdate lens updater nextMsg newModel
+                        |> \( model_, cmds ) -> ( model_ , Cmd.batch [ cmd, cmds ] )
+
+                Nothing ->
+                    ( newModel, cmd )
+
+        SelectTree newSelection ->
+          ( {-(FieldLens.compose lens selectionLens).set newSelection-} model
+            |> case newSelection of
+                    Just s -> updater s
+                    Nothing -> identity
+          , Cmd.none )
+
+selectorView conf sel = Selectize.view conf sel.selection sel.menu

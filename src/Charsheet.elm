@@ -7,20 +7,21 @@ import Html exposing (Attribute, Html, a, br, button, div, h3, hr, img, input, l
 import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
 import Html.Events exposing (on, onClick)
 import Html.Events.Extra exposing (targetValueInt)
-import Maybe exposing (andThen, withDefault)
-import Model exposing (Model, ModelLens, agility, ballisticSkill, fellowship, intelligence, perception, skillAdd, skillDown, skillRm, skillUp, strength, toughness, weaponSkill, willpower)
+import Maybe exposing (withDefault)
+import Model exposing (Model, ModelLens, Talent, agility, ballisticSkill, fellowship, intelligence, perception, strength, toughness, weaponSkill, willpower)
+import Selectize
 import Set
 import Skills exposing (Skill)
 import Stats exposing (Aptitude(..), StatName(..), aptMap, aptToString)
 import FieldLens exposing (FieldLens)
 import Json.Decode as Json
-import Talents
-import Util exposing (SelectorMsg(..), applyM)
+import TalentSelectorView
+import Util exposing (SelectorMsg(..))
 
 main = Browser.element
   { init = init
   , view = view
-  , update = update
+  , update = Controller.update
   , subscriptions = subscriptions
   }
 
@@ -63,7 +64,11 @@ init _ =
     , skills = Dict.fromList <| List.map (\v -> (v.name, (v, 0))) [ Skills.logic , Skills.acrobatics ]
     , temp = Nothing
     , drop = "none"
-    , talentSelector = Talents.init
+    , talentSelector =
+      { selection = Nothing
+      , menu = Selectize.closed "talentSelector" .name
+               <| List.map Selectize.entry <| Dict.values Model.talentList
+      }
     , talents = Dict.empty
     , traits = Set.empty
     , implants = Set.empty
@@ -73,49 +78,6 @@ init _ =
     }
   , Cmd.none)
 
-statUp: Model -> ModelLens -> Model
-statUp model lens =
-  let (val, _, apts) = FieldLens.get lens model
-      aCnt = Stats.aptsCounter model.aptitudes apts
-      cost = Stats.getCost aCnt val
-      pay = Maybe.map Model.payCost cost
-  in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val+1)) |> Maybe.withDefault model
-
-statDown: Model -> ModelLens -> Model
-statDown model lens =
-  let (val, _, apts) = FieldLens.get lens model
-      aCnt = Stats.aptsCounter model.aptitudes apts
-      cost = Stats.getCost aCnt (val - 1)
-      pay = Maybe.map Model.refund cost
-  in applyM pay (Just model) |> Maybe.map (FieldLens.set lens (val - 1)) |> Maybe.withDefault model
-
-update: Msg -> Model -> (Model, Cmd Msg)
-update msg model =
-  case msg of
-    StatUp f -> (statUp model f, Cmd.none)
-    StatDown f -> (statDown model f, Cmd.none)
-    SkillUp sName -> (skillUp model sName, Cmd.none)
-    SkillDown sName -> (skillDown model sName, Cmd.none)
-    RmSkill sName -> (skillRm model sName, Cmd.none)
-    AddTemp tmp -> ({ model | temp = Just tmp }, Cmd.none)
-    AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
-    UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
-    TalentSelect selectMsg ->
-      let cost s m = Talents.getCost ((Stats.aptsCounter m.aptitudes s.aptitudes), s.tier)
-          pay s m = case (cost s m) of
-                      Just c -> Model.payCost c m
-                      Nothing -> m
-          updater s m =
-            { m | talents = Dict.insert s.name s m.talents } |> pay s
-          (newModel, newCmd) = Model.talentUpdate updater selectMsg model
-       in (newModel, Cmd.map TalentSelect newCmd)
-    TalentRemove talent ->
-      let cost s m = Talents.getCost ((Stats.aptsCounter m.aptitudes s.aptitudes), s.tier)
-          ref s m = case (cost s m) of
-                      Just c -> Model.refund c m
-                      Nothing -> m
-       in ({ model | talents = Dict.remove talent.name model.talents } |> ref talent, Cmd.none)
-    _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
 statBox sName model lens =
@@ -214,6 +176,14 @@ freeExpView model =
         , on "input" <| Json.map UpdateExp <| targetValueInt
         ]
   [ text <| String.fromInt model.freeExp]
+
+talentEntry : Talent -> Bool -> Bool -> Selectize.HtmlDetails Never
+talentEntry talent mouseFocused keyboardFocused =
+  { attributes = [ style "cursor" "pointer" ]
+    ++ if keyboardFocused then [ style "background-color" "#f5fafd"] else []
+    --++ [ disabled <| Dict.member talent.name ]
+  , children = [ text talent.name ]
+  }
 
 view: Model -> Html Msg
 view model =
@@ -406,7 +376,7 @@ view model =
                       in List.map template_ (Dict.values model.talents)
                 ++
                 [ div [ class "w3-row", id "addTalent" ]
-                  [ Talents.view model.talentSelector |> Html.map (TalentSelect << MenuMsg)
+                  [ TalentSelectorView.view model |> Html.map (TalentSelect << MenuMsg)
                   --, button []
                   ]
                 , br [] []-- Break between Talents and Aptitudes
