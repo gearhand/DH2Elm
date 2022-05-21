@@ -14,10 +14,8 @@ type Msg = StatUp ModelLens
          | SkillUp String
          | SkillDown String
          | UpdateExp Int
-         | Add -- Talent
-         | Remove -- Talent
          | TalentSelect (SelectorMsg Talent)
-         | TalentSubmit
+         | TalentRemove Talent
          | Placeholder String
          | Empty
 --

@@ -1,6 +1,7 @@
 module Talents exposing (..)
 
 
+import Array
 import Browser
 import Dict exposing (Dict)
 import FieldLens
@@ -78,10 +79,22 @@ type alias Talent = { name: String
 --    , Cmd.batch [ cmd, cmds ]
 --    )
 
+
+costs =
+  Array.fromList <| List.map Array.fromList
+  [ [ 600, 900, 1200 ]
+  , [ 300, 450, 600 ]
+  , [ 200, 300, 400 ]
+  ]
+
+getCost: (Int, Int) -> Maybe Int
+getCost (aptitudes, rank) =
+  Array.get aptitudes costs |> Maybe.andThen (Array.get rank)
+
 init: Selector Talent
 init =
   { selection = Nothing
-  , menu = Selectize.closed "talentSelector" .name <| List.map Selectize.entry talentList
+  , menu = Selectize.closed "talentSelector" .name <| List.map Selectize.entry <| Dict.values talentList1
   }
 
 view : Selector Talent -> Html (Msg Talent)
@@ -92,7 +105,7 @@ view model =
 
 config =
   { container = []
-  , menu = []
+  , menu = [ style "overflow" "scroll", style "background" "white", style "max-height" "20rem" ]
   , ul = []
   , entry = entry
   , divider = (\string -> { attributes = [], children = [ text string ]})

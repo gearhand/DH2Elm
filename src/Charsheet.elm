@@ -101,8 +101,20 @@ update msg model =
     AddSpec sName skill -> (skillAdd model sName skill, Cmd.none)
     UpdateExp exp -> ({ model | freeExp = exp }, Cmd.none)
     TalentSelect selectMsg ->
-      let (newModel, newCmd) = Model.talentUpdate (\s m -> { m | talents = Dict.insert s.name s m.talents}) selectMsg model
+      let cost s m = Talents.getCost ((Stats.aptsCounter m.aptitudes s.aptitudes), s.tier)
+          pay s m = case (cost s m) of
+                      Just c -> Model.payCost c m
+                      Nothing -> m
+          updater s m =
+            { m | talents = Dict.insert s.name s m.talents } |> pay s
+          (newModel, newCmd) = Model.talentUpdate updater selectMsg model
        in (newModel, Cmd.map TalentSelect newCmd)
+    TalentRemove talent ->
+      let cost s m = Talents.getCost ((Stats.aptsCounter m.aptitudes s.aptitudes), s.tier)
+          ref s m = case (cost s m) of
+                      Just c -> Model.refund c m
+                      Nothing -> m
+       in ({ model | talents = Dict.remove talent.name model.talents } |> ref talent, Cmd.none)
     _ -> (model, Cmd.none)
 
 statBox: StatName -> Model -> ModelLens -> Html Msg
@@ -382,10 +394,15 @@ view model =
                   [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
                     [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
                   ]
-                ] ++ let template_ talent_ = div [ class "w3-row", id "talent0" ]
-                                           [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
-                                             [ span [ class "talentDetail" ] [ text talent_.name ]]
-                                           ]
+                ] ++ let template_ talent_ =
+                           div [ class "w3-row", id "talent0" ]
+                           [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
+                             [ span [ class "talentDetail" ] [ text talent_.name ]
+                             , button [ style "height" "100%", style "float" "right"
+                                      , onClick <| TalentRemove talent_
+                                      ] [ text "X" ]
+                             ]
+                           ]
                       in List.map template_ (Dict.values model.talents)
                 ++
                 [ div [ class "w3-row", id "addTalent" ]
