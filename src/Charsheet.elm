@@ -4,11 +4,11 @@ import Browser
 import Controller exposing (Msg(..))
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, a, br, button, div, h3, hr, img, input, label, option, p, s, section, select, span, table, td, text, tr)
-import Html.Attributes exposing (class, disabled, href, id, name, src, style, target, type_, value)
-import Html.Events exposing (on, onClick)
+import Html.Attributes exposing (class, disabled, href, id, name, placeholder, src, style, target, type_, value)
+import Html.Events exposing (on, onClick, onInput)
 import Html.Events.Extra exposing (targetValueInt)
 import Maybe exposing (withDefault)
-import Model exposing (Model, ModelLens, Talent, agility, ballisticSkill, fellowship, intelligence, perception, strength, toughness, weaponSkill, willpower)
+import Model exposing (Model, ModelLens, TSpec(..), Talent, agility, ballisticSkill, fellowship, intelligence, perception, strength, toughness, weaponSkill, willpower)
 import Selectize
 import Set
 import Skills exposing (Skill)
@@ -70,6 +70,7 @@ init _ =
                <| List.map Selectize.entry <| Dict.values Model.talentList
       }
     , talents = Dict.empty
+    , talentSpecInput = ""
     , traits = Set.empty
     , implants = Set.empty
     , psyRating = 0
@@ -364,16 +365,37 @@ view model =
                   [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
                     [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
                   ]
-                ] ++ let template_ talent_ =
+                ] ++ let template_ (tName_, talent_) =
                            div [ class "w3-row", id "talent0" ]
                            [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
-                             [ span [ class "talentDetail" ] [ text talent_.name ]
-                             , button [ style "height" "100%", style "float" "right"
-                                      , onClick <| TalentRemove talent_
-                                      ] [ text "X" ]
-                             ]
+                             <| case talent_.spec of
+                               Nothing ->
+                                 [ span [ class "talentDetail" ] [ text tName_ ]
+                                 , button [ style "height" "100%", style "float" "right"
+                                          , onClick <| TalentRemove talent_
+                                          ] [ text "X" ]
+                                 ]
+                               Just (Fixed specs) ->
+                                 let opt (idx, name) = option [style "text-align" "center", value (String.fromInt idx)] [ text name ]
+                                 in
+                                 [ span [ class "talentDetail" ] [ text talent_.name ]
+                                 , select [ selectHandler (\idx -> case Array.get idx specs of
+                                                                     Just msg -> Chained (TalentSpecFill msg) (TalentSpec talent_)
+                                                                     Nothing -> Empty
+                                                          )
+                                          , style "width" "50%"
+                                          ] <| List.map opt <| Array.toIndexedList specs
+                                 ]
+                               Just Free ->
+                                 [ span [ class "talentDetail" ] [ text talent_.name ]
+                                 , input [ style "width" "40px", type_ "text", placeholder "Input specialization", onInput TalentSpecFill ] []
+                                 , button [ style "height" "100%", onClick (TalentSpec talent_) ] [ text "✓" ]
+                                 , button [ style "height" "100%", style "float" "right"
+                                          , onClick <| TalentRemove talent_
+                                          ] [ text "X" ]
+                                 ]
                            ]
-                      in List.map template_ (Dict.values model.talents)
+                      in List.map template_ (Dict.toList model.talents)
                 ++
                 [ div [ class "w3-row", id "addTalent" ]
                   [ TalentSelectorView.view model |> Html.map (TalentSelect << MenuMsg)
