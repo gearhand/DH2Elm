@@ -1,5 +1,6 @@
 module TalentSelectorView exposing (..)
 
+import Dict
 import Html exposing (Html, text)
 import Html.Attributes exposing (class, classList, style, title)
 import Model exposing (Model, Talent, checkTalent, talentMenu, talentSelection)
@@ -43,7 +44,14 @@ entry model talent mouseFocused keyboardFocused =
                            else if not checkResult then [ style "color" "red" ]
                            else []
         ++ [ title talent.benefit ]
-      , children = [ text <| talent.name ++ if not checkResult then " — needs " ++ talent.prerequisites else ""]
+      , children = [ text <| talent.name
+                          ++ (case talent.multiplier of
+                               Just mult -> " (" ++ String.fromInt mult ++ ")"
+                               Nothing -> ""
+                             )
+                          ++ if not checkResult then " — needs " ++ talent.prerequisites else ""
+                   ]
+
       }
 
 toggleButton : Maybe (Bool -> Html Never)
@@ -73,3 +81,6 @@ clearButton =
                 ]
                 [ Html.text "clear" ]
             ]
+
+
+entries talents = Selectize.closed "talentSelector" .name <| List.map Selectize.entry <| Dict.values talents

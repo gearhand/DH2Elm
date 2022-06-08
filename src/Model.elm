@@ -2,12 +2,13 @@ module Model exposing (..)
 
 import Array exposing (Array)
 import Dict exposing (Dict)
+import Dict.Extra as Dict
 import FieldLens exposing (FieldLens)
 import Selectize
 import Set exposing (Set)
 import Skills exposing (Skill)
 import Stats exposing (Aptitude(..), StatName(..))
-import String exposing (startsWith)
+import String exposing (contains, startsWith)
 import Util exposing (Selector, SelectorLens, SelectorMsg(..), menuLens, selectionLens)
 
 type alias Model =
@@ -37,10 +38,11 @@ type alias Model =
   , corruption: Int
   }
 
-type ModelPredicate = ModelPredicate (Model -> Bool)
+type ModelPredicate = ModelPredicate (Model -> Bool) | TalentModelPredicate (Talent -> Model -> Bool)
 
-type TSpec = Fixed (Array String) | Free
-type alias Talent = { spec: Maybe TSpec
+type TSpec = Fixed (Array String) | Param (Model -> Array String) | Free
+type alias Talent = { multiplier: Maybe Int
+                    , spec: Maybe TSpec
                     , name: String
                     , prerequisites: String
                     , predicate: ModelPredicate
@@ -50,9 +52,18 @@ type alias Talent = { spec: Maybe TSpec
                     , page: String
                     }
 
-mkTalent = Talent Nothing
-mkFree = Talent <| Just Free
-mkFixed = Talent << Just << Fixed << Array.fromList
+talentCost talent model = getTalentCost ((Stats.aptsCounter model.aptitudes talent.aptitudes), talent.tier - 1)
+
+payCost: Maybe Int -> Model -> Model
+payCost mCost model =
+  case mCost of
+    Just cost -> { model | spentExp = model.spentExp + cost, freeExp = model.freeExp - cost }
+    Nothing -> model
+
+mkTalent = Talent Nothing Nothing
+mkFree = Talent Nothing <| Just Free
+mkFixed = Talent Nothing << Just << Fixed << Array.fromList
+mkParam = Talent Nothing << Just << Param
 
 getTalentCost: (Int, Int) -> Maybe Int
 getTalentCost (aptitudes, rank) =
@@ -65,9 +76,19 @@ getTalentCost (aptitudes, rank) =
     in
   Array.get aptitudes costs |> Maybe.andThen (Array.get rank)
 
+predicate: FieldLens Talent (Model -> Bool) ModelPredicate Talent
+predicate = FieldLens
+  (\t -> case t.predicate of
+           ModelPredicate p -> p
+           TalentModelPredicate tp -> tp t
+  )
+  (\p t -> { t | predicate = p })
+
+multiplier: FieldLens Talent (Maybe Int) (Maybe Int) Talent
+multiplier = FieldLens .multiplier (\mult talent -> { talent | multiplier = mult })
+
 checkTalent: Talent -> Model -> Bool
-checkTalent talent =
-  let (ModelPredicate p) = talent.predicate in p
+checkTalent talent = predicate.get talent
 
 type alias StatTriplet = (Int, Int, List Aptitude)
 type alias ModelLens = FieldLens Model StatTriplet Int Model
@@ -308,14 +329,14 @@ talentList =
            "PG 131 CB"
   , mkTalent "Skilled Rider"
            "Rank 2 in any Operate skill "
-           (p <| \_ -> False) -- TODO read rulebook
+           (p <| Dict.any (\k (_, v) -> (k |> startsWith "Operate") && v >= 10) << .skills)
            [StatApt Ag, Fieldcraft]
            1
-           "Whenever the character would be thrown from or tossed about within his vehicle,      he makes      an Ordinary (+10) StatApt Ag test. If he succeeds, the character may choose to      either      land safely on his feet or retain in his original position in the vehicle. In      addition,      once per round the character can attempt an Ordinary (+10) Agility test to Mount      or Dismount a vehicle as a Free Action."
+           "Whenever the character would be thrown from or tossed about within his vehicle, he makes an Ordinary (+10) StatApt Ag test. If he succeeds, the character may choose to either land safely on his feet or retain in his original position in the vehicle. In addition, once per round the character can attempt an Ordinary (+10) Agility test to Mount or Dismount a vehicle as a Free Action."
            "PG 63 EO"
-  , mkTalent "Sound Constitution"
-           "-"
-           (p <| \_ -> True)
+  , Talent (Just 1) Nothing "Sound Constitution"
+           "Multiplier must be not greater than Toughness bonus"
+           (TalentModelPredicate <| \t m -> Maybe.withDefault False <| Maybe.map ((>=) <| (Stats.value <| toughness.get m) // 10) t.multiplier )
            [StatApt Tou, General]
            1
            "Gain an additional wound."
@@ -344,7 +365,7 @@ talentList =
            1
            "Allows Psyniscience test as Free Action."
            "PG 133 CB"
-  , mkFixed ["Bolt", "Chain", "Burn", "Heavy", "Laz", "Launcher", "Melta", "Plasma", "Force", "Nano", "Shock", "Stub"]
+  , mkFixed ["Bolt", "Chain", "Burn", "Heavy", "Laz", "Launcher", "Melta", "Plasma", "Force", "Low-Tech", "Shock", "Stub"]
            "Weapon Training"
            "-"
            (p <| \_ -> True)
@@ -410,9 +431,16 @@ talentList =
            2
            "Opponents get no bonus for outnumbering the character."
            "PG 124 CB"
-  , mkTalent "Constant Vigilance (choose)"
-           "Int 35 or Per 35, Awareness +10"
-           (p <| \_ -> False) -- TODO Spec Talent with spec dependent prerequisite
+  , mkTalent "Constant Vigilance (Intelligence)"
+           "Int 35, Awareness +10"
+           (p <| sAnd (statThresh intelligence 35) <| skillThresh "Awareness" 10 )
+           [StatApt Per, Defence]
+           2
+           "Can use Per or Int instead of Ag for Initiative rolls, and rolls two dice      (picking higher)      for the result."
+           "PG 124 CB"
+  , mkTalent "Constant Vigilance (Perception)"
+           "Per 35, Awareness +10"
+           (p <| sAnd (statThresh perception 35) <| skillThresh "Awareness" 10 )
            [StatApt Per, Defence]
            2
            "Can use Per or Int instead of Ag for Initiative rolls, and rolls two dice      (picking higher)      for the result."
@@ -487,7 +515,7 @@ talentList =
            2
            "A second ranged attack against the same target, grants a+20 bonus if scored 1 or      more      DoS.    "
            "PG 125 CB"
-  , mkFree "Exotic Weapon Training" -- TODO Spec Talent
+  , mkFree "Exotic Weapon Training"
            "-"
            (p <| \_ -> True)
            [StatApt Int, Finesse]
@@ -628,7 +656,8 @@ talentList =
            2
            "No penalties for firing at long or extreme range."
            "PG 130 CB"
-  , mkTalent "Mechadendrite Use (choose)" -- TODO Spec Talent
+  , mkFixed ["Combat", "Support"]
+           "Mechadendrite Use"
            "Mechanicus Implants"
            (p <| \m -> Set.member "Mechanicus Implants" m.traits)
            [StatApt Int, Tech]
@@ -804,7 +833,10 @@ talentList =
            "PG 123 CB"
   , mkTalent "Blademaster"
            "WS 30, Weapon Training (any Melee)"
-           (p <| \_ -> False) -- TODO Melee Spec
+           ( p <| List.any ( sAnd (startsWith "Weapon Training")
+                           <| List.foldl sOr (contains "Chain") <| List.map contains ["Force", "Low-Tech", "Shock"]
+                           ) << Dict.keys << .talents
+           )
            [StatApt WS, Finesse]
            3
            "When attacking with any bladed weapon, can re-roll one missed attack per round.    "
@@ -955,9 +987,11 @@ talentList =
            3
            "Counts as being equipped with a single shot Pistol weapon with a 10m range and      deals      1d10 plus twice his StatApt Will bonus in Energy damage. Must pass a StatApt Tou test      or suffer 1 level of Fatigue after attack."
            "PG 129 CB"
-  , mkTalent "Mastery (choose)"
+  , let paramF = (Array.fromList << Dict.keys << Dict.filter (\_ (_, v) -> v == 30) << .skills)
+    in mkParam paramF
+           "Mastery"
            "Rank 4 in selected skill"
-           (p <| \_ -> False) -- TODO needed parameter
+           (p <| not << Array.isEmpty << paramF)
            [StatApt Int, Knowledge]
            3
            "May spend Fate point to succeed on test if the final modifier to his skill test      is Challenging      (+0) or better, score a number of degrees of success equal to the characteristic      bonus.    "
@@ -1085,7 +1119,7 @@ talentList =
            "PG 133 CB"
   , mkTalent "Weapon Intuition"
            "Exotic Weapon Training (Any)"
-           (p <| \_ -> False) -- TODO Spec Talent Dependency
+           (p <| List.any (startsWith "Exotic Weapon Training") << Dict.keys << .talents  )
            [StatApt Int, Finesse]
            3
            "The character reduces the penalty for using a weapon without the proper training      by 10.    "

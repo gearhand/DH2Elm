@@ -178,14 +178,6 @@ freeExpView model =
         ]
   [ text <| String.fromInt model.freeExp]
 
-talentEntry : Talent -> Bool -> Bool -> Selectize.HtmlDetails Never
-talentEntry talent mouseFocused keyboardFocused =
-  { attributes = [ style "cursor" "pointer" ]
-    ++ if keyboardFocused then [ style "background-color" "#f5fafd"] else []
-    --++ [ disabled <| Dict.member talent.name ]
-  , children = [ text talent.name ]
-  }
-
 view: Model -> Html Msg
 view model =
     section [ id "charSheet"
@@ -361,16 +353,21 @@ view model =
                       span [ class "talentDetail"] []
                     ]
                   ]
-                , div [ class "w3-row", id "talent0" ]
-                  [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
-                    [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
-                  ]
+                --, div [ class "w3-row", id "talent0" ]
+                --  [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
+                --    [ span [ class "talentDetail" ] [ text "Weapon Training (Chain)" ]]
+                --  ]
                 ] ++ let template_ (tName_, talent_) =
                            div [ class "w3-row", id "talent0" ]
                            [ div [ class "sheet-item w3-center underline", style "width" "100%" ]
                              <| case talent_.spec of
                                Nothing ->
-                                 [ span [ class "talentDetail" ] [ text tName_ ]
+                                 [ span [ class "talentDetail" ]
+                                        [ text <| tName_
+                                               ++ case talent_.multiplier of
+                                                    Just mult -> " (" ++ String.fromInt mult ++ ")"
+                                                    Nothing -> ""
+                                        ]
                                  , button [ style "height" "100%", style "float" "right"
                                           , onClick <| TalentRemove talent_
                                           ] [ text "X" ]
@@ -379,12 +376,27 @@ view model =
                                  let opt (idx, name) = option [style "text-align" "center", value (String.fromInt idx)] [ text name ]
                                  in
                                  [ span [ class "talentDetail" ] [ text talent_.name ]
-                                 , select [ selectHandler (\idx -> case Array.get idx specs of
-                                                                     Just msg -> Chained (TalentSpecFill msg) (TalentSpec talent_)
+                                 , select [ selectHandler (\idx -> case Array.get (idx - 1) specs of
+                                                                     Just msg -> Chained [TalentSpecFill msg, TalentSpec talent_]
                                                                      Nothing -> Empty
                                                           )
                                           , style "width" "50%"
-                                          ] <| List.map opt <| Array.toIndexedList specs
+                                          ] <| [ option [style "text-align" "center"] [ text "Choose" ]
+                                               ] ++ (List.map opt <| Array.toIndexedList specs)
+                                 ]
+                               Just (Param specF) ->
+                                 let opt (idx, name) = option [style "text-align" "center", value (String.fromInt idx)] [ text name ]
+                                     specs = Debug.log "Parameterized specs: " (specF model)
+                                 in
+                                 [ span [ class "talentDetail" ] [ text talent_.name ]
+                                 , select [ selectHandler (\idx -> case Array.get (idx - 1) specs of
+                                                                     Just msg -> Chained [TalentSpecFill msg, TalentSpec talent_]
+                                                                     Nothing -> Empty
+                                                          )
+                                          , style "width" "50%"
+                                          ] <| [ option [style "text-align" "center"] [ text "Choose" ]
+                                               ] ++ (List.map opt <| Array.toIndexedList specs)
+                                 --, button [ style "height" "100%", onClick (TalentSpec talent_) ] [ text "✓" ]
                                  ]
                                Just Free ->
                                  [ span [ class "talentDetail" ] [ text talent_.name ]

@@ -14,7 +14,8 @@
       "sjorn3/elm-fields": "2.0.0",
       "basti1302/elm-non-empty-array": "2.1.0",
       "Orasund/elm-static-array": "2.0.2",
-      "kirchner/elm-selectize": "2.0.7"
+      "kirchner/elm-selectize": "2.0.7",
+      "elm-community/dict-extra" : "2.4.0"
     },
     "indirect": {
       "elm/time": "1.0.0",

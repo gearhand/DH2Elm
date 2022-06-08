@@ -4,10 +4,11 @@ module Controller exposing (..)
 import Dict
 import FieldLens
 import Maybe exposing (andThen)
-import Model exposing (Model, ModelLens, ModelPredicate(..), Talent, getTalentCost)
+import Model exposing (Model, ModelLens, ModelPredicate(..), ModelUpdater(..), Talent, checkTalent, getTalentCost, multiplier, payCost, talentMenu)
 import Skills exposing (Skill)
 import Stats
-import Util exposing (SelectorMsg, applyM)
+import TalentSelectorView exposing (entries)
+import Util exposing (SelectorMsg)
 type Msg = StatUp ModelLens
          | StatDown ModelLens
          | RmSkill String
@@ -21,14 +22,9 @@ type Msg = StatUp ModelLens
          | TalentSpecFill String
          | TalentSpec Talent
          | Placeholder String
-         | Chained Msg Msg
+         | Chained (List Msg)
          | Empty
 
-payCost: Maybe Int -> Model -> Model
-payCost mCost model =
-  case mCost of
-    Just cost -> { model | spentExp = model.spentExp + cost, freeExp = model.freeExp - cost }
-    Nothing -> model
 
 refund: Maybe Int -> Model -> Model
 refund mCost model =
@@ -95,9 +91,9 @@ statDown model lens =
 
 update: Msg -> Model -> (Model, Cmd Msg)
 update msg model =
-  let talentCost s m = getTalentCost ((Stats.aptsCounter m.aptitudes s.aptitudes), s.tier - 1)
+  let talentCost t m = getTalentCost ((Stats.aptsCounter m.aptitudes t.aptitudes), t.tier - 1)
   in
-  case Debug.log "Update: " msg of
+  case {-Debug.log "Update: "-} msg of
     StatUp f -> statUp model f |> noCmd
     StatDown f -> statDown model f |> noCmd
     SkillUp sName -> skillUp model sName |> noCmd
@@ -108,31 +104,45 @@ update msg model =
     UpdateExp exp -> { model | freeExp = exp } |> noCmd
     TalentSpecFill txt -> { model | talentSpecInput = txt } |> noCmd
     TalentSelect selectMsg ->
-      let pay s m = payCost (talentCost s m) m
-          check (ModelPredicate p) m = p m
-          updater s m =
-            if check s.predicate m
-               then { m | talents = Dict.insert s.name s m.talents }
-                    |> case s.spec of
-                         Nothing -> pay s
-                         Just _ -> identity
-               else m
+      let pay t m = payCost (talentCost t m) m
+          newMultiplier t = Maybe.map ((+) 1) t.multiplier
+          listUpdate t = talentMenu.set << entries <| Dict.update t.name (Maybe.map (multiplier.set <| newMultiplier t)) Model.talentList
+          insert t m = { m | talents = Dict.insert t.name t m.talents }
+          updater talent model_ =
+            if checkTalent talent model_
+              then case (talent.multiplier, talent.spec) of
+                     (Nothing, Nothing) ->
+                       if not (Dict.member talent.name model.talents)
+                         then pay talent <| insert talent model_
+                         else model_
+                     (Just _, Nothing) ->
+                       listUpdate talent <| pay talent <| insert talent model_
+                     (Nothing, Just _) ->
+                       if not (Dict.member talent.name model_.talents)
+                         then insert talent model_
+                         else model_
+                     (Just _, Just _) -> Debug.log "TODO" model_ -- TODO Think hard
+              else model_
           (newModel, newCmd) = Model.talentUpdate updater selectMsg model
        in (newModel, Cmd.map TalentSelect newCmd)
     TalentRemove talent ->
-      let ref s m = refund (talentCost s m) m
-       in { model | talents = Dict.remove talent.name model.talents } |> ref talent |> noCmd
+      let ref m = refund (talentCost talent m) m
+          listUpdate = talentMenu.set << entries <| Dict.update talent.name (Maybe.map (multiplier.set talent.multiplier)) Model.talentList
+       in case (talent.multiplier) of
+            Nothing -> { model | talents = Dict.remove talent.name model.talents } |> ref |> noCmd
+            Just 1 ->  { model | talents = Dict.remove talent.name model.talents } |> ref |> listUpdate |> noCmd
+            Just _ ->  { model | talents = Dict.update talent.name (Maybe.map (FieldLens.modify multiplier (Maybe.map (\x -> x - 1)))) model.talents } |> ref |> listUpdate |> noCmd
     TalentSpec talent ->
       let talentModified = { talent | spec = Nothing, name = talent.name ++ " (" ++ model.talentSpecInput ++ ")" }
           pay s m = payCost (talentCost s m) m
-       in case Dict.get talentModified.name model.talents of
-            Nothing -> { model | talents =
-                               Dict.insert talentModified.name talentModified
-                               <| Dict.remove talent.name model.talents
-                       } |> pay talent |> noCmd
-            Just _ -> { model | talents = Dict.remove talent.name model.talents } |> noCmd
-    Chained msg1 msg2 ->
+       in if Dict.member talentModified.name model.talents
+             then { model | talents = Dict.remove talent.name model.talents } |> noCmd
+             else { model | talents =
+                          Dict.insert talentModified.name talentModified
+                          <| Dict.remove talent.name model.talents
+                  } |> pay talent |> noCmd
+    Chained (msg1 :: msg2) ->
       let (model1, cmd1) = update msg1 model
-          (model2, cmd2) = update msg2 model1
+          (model2, cmd2) = update (Chained msg2) model1
        in (model2, Cmd.batch [ cmd1, cmd2 ])
     _ -> model |> noCmd
